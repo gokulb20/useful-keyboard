@@ -45,6 +45,9 @@ mkdir -p "$STAGED_APP_DIR/Contents/MacOS" "$STAGED_APP_DIR/Contents/Resources" "
 cp "$APP_BIN" "$STAGED_APP_DIR/Contents/MacOS/Muesli"
 cp "$ROOT/assets/menu_m_template.png" "$STAGED_APP_DIR/Contents/Resources/menu_m_template.png"
 cp "$ROOT/assets/muesli.icns" "$STAGED_APP_DIR/Contents/Resources/muesli.icns"
+if [[ -d "$ROOT/assets/fonts" ]]; then
+  ditto "$ROOT/assets/fonts" "$STAGED_APP_DIR/Contents/Resources/fonts"
+fi
 cp "$SYSTEM_AUDIO_BIN" "$STAGED_APP_DIR/Contents/Resources/MuesliSystemAudio"
 chmod +x "$STAGED_APP_DIR/Contents/Resources/MuesliSystemAudio"
 

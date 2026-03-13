@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let runtime = try RuntimePaths.resolve()
+            AppFonts.registerIfNeeded(runtime: runtime)
             if let appIcon = runtime.appIcon, let image = NSImage(contentsOf: appIcon) {
                 NSApplication.shared.applicationIconImage = image
             }
