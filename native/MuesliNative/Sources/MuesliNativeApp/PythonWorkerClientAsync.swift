@@ -16,4 +16,12 @@ extension PythonWorkerClient {
             }
         }
     }
+
+    func transcribeMeetingChunkAsync(wavURL: URL, option: BackendOption) async throws -> [String: Any] {
+        try await withCheckedThrowingContinuation { continuation in
+            transcribeMeetingChunk(wavURL: wavURL, option: option) { result in
+                continuation.resume(with: result)
+            }
+        }
+    }
 }

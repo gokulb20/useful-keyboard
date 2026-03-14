@@ -19,8 +19,18 @@ final class MeetingSession {
     private let runtime: RuntimePaths
     private let config: AppConfig
     private let transcriptionCoordinator: TranscriptionCoordinator
-    private let microphoneRecorder = MicrophoneRecorder()
     private let systemAudioRecorder: SystemAudioRecorder
+
+    /// Current mic recorder (rotated every chunk interval)
+    private var micRecorder = MicrophoneRecorder()
+    /// Timer that triggers chunk rotation
+    private var chunkTimer: Timer?
+    /// Accumulated mic transcript segments from completed chunks
+    private var accumulatedMicSegments: [SpeechSegment] = []
+    /// Track chunk start times for timestamp offsets
+    private var currentChunkStartTime: Date?
+    /// How often to rotate mic recording (seconds)
+    private let chunkInterval: TimeInterval = 30
 
     private(set) var startTime: Date?
     private(set) var isRecording = false
@@ -43,39 +53,71 @@ final class MeetingSession {
     }
 
     func start() throws {
-        try microphoneRecorder.prepare()
-        try microphoneRecorder.start()
+        try micRecorder.prepare()
+        try micRecorder.start()
         try systemAudioRecorder.start()
-        startTime = Date()
+        let now = Date()
+        startTime = now
+        currentChunkStartTime = now
         isRecording = true
+
+        // Start chunk timer on main thread
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.chunkTimer = Timer.scheduledTimer(withTimeInterval: self.chunkInterval, repeats: true) { [weak self] _ in
+                self?.rotateChunk()
+            }
+        }
+
+        fputs("[meeting] started with \(chunkInterval)s chunk interval\n", stderr)
     }
 
     func stop() async throws -> MeetingSessionResult {
         isRecording = false
-        let startTime = self.startTime ?? Date()
+        let meetingStart = self.startTime ?? Date()
         let endTime = Date()
 
-        let micAudioURL = microphoneRecorder.stop()
+        // Stop chunk timer
+        chunkTimer?.invalidate()
+        chunkTimer = nil
+
+        // Stop mic and get last chunk
+        let lastMicURL = micRecorder.stop()
+        let lastChunkStart = currentChunkStartTime ?? meetingStart
+
+        // Stop system audio
         let systemAudioURL = systemAudioRecorder.stop()
 
-        let micResult: SpeechTranscriptionResult
-        if let micAudioURL {
-            micResult = try await transcriptionCoordinator.transcribeMeeting(at: micAudioURL, backend: backend)
-        } else {
-            micResult = SpeechTranscriptionResult(text: "", segments: [])
+        // Transcribe last mic chunk
+        if let lastMicURL {
+            let chunkOffset = lastChunkStart.timeIntervalSince(meetingStart)
+            fputs("[meeting] transcribing final mic chunk (offset=\(String(format: "%.0f", chunkOffset))s)\n", stderr)
+            do {
+                let result = try await transcriptionCoordinator.transcribeMeetingChunk(at: lastMicURL, backend: backend)
+                if !result.text.isEmpty {
+                    accumulatedMicSegments.append(SpeechSegment(start: chunkOffset, end: chunkOffset, text: result.text))
+                }
+            } catch {
+                fputs("[meeting] final mic chunk transcription failed: \(error)\n", stderr)
+            }
+            try? FileManager.default.removeItem(at: lastMicURL)
         }
 
+        // Transcribe system audio (batch — this is the only wait after meeting ends)
         let systemResult: SpeechTranscriptionResult
         if let systemAudioURL {
+            fputs("[meeting] transcribing system audio (batch)\n", stderr)
             systemResult = try await transcriptionCoordinator.transcribeMeeting(at: systemAudioURL, backend: backend)
         } else {
             systemResult = SpeechTranscriptionResult(text: "", segments: [])
         }
 
+        fputs("[meeting] \(accumulatedMicSegments.count) mic chunks transcribed during meeting\n", stderr)
+
         let rawTranscript = TranscriptFormatter.merge(
-            micSegments: micResult.segments,
+            micSegments: accumulatedMicSegments,
             systemSegments: systemResult.segments,
-            meetingStart: startTime
+            meetingStart: meetingStart
         )
         let formattedNotes = await MeetingSummaryClient.summarize(
             transcript: rawTranscript,
@@ -86,13 +128,56 @@ final class MeetingSession {
         return MeetingSessionResult(
             title: title,
             calendarEventID: calendarEventID,
-            startTime: startTime,
+            startTime: meetingStart,
             endTime: endTime,
-            durationSeconds: max(endTime.timeIntervalSince(startTime), 0),
+            durationSeconds: max(endTime.timeIntervalSince(meetingStart), 0),
             rawTranscript: rawTranscript,
             formattedNotes: formattedNotes,
-            micAudioPath: micAudioURL?.path,
+            micAudioPath: nil,
             systemAudioPath: systemAudioURL?.path
         )
+    }
+
+    /// Called every chunkInterval seconds. Stops current mic recording,
+    /// starts a new one, and sends the completed chunk for transcription.
+    private func rotateChunk() {
+        guard isRecording else { return }
+        let meetingStart = self.startTime ?? Date()
+        let chunkStart = currentChunkStartTime ?? meetingStart
+
+        // Stop current recorder, get WAV
+        let chunkURL = micRecorder.stop()
+
+        // Start new recorder immediately (minimize gap)
+        let newRecorder = MicrophoneRecorder()
+        do {
+            try newRecorder.prepare()
+            try newRecorder.start()
+        } catch {
+            fputs("[meeting] chunk rotation recorder start failed: \(error)\n", stderr)
+        }
+        micRecorder = newRecorder
+        currentChunkStartTime = Date()
+
+        // Transcribe the completed chunk async
+        guard let chunkURL else { return }
+        let chunkOffset = chunkStart.timeIntervalSince(meetingStart)
+        let backend = self.backend
+
+        fputs("[meeting] rotating chunk at offset=\(String(format: "%.0f", chunkOffset))s\n", stderr)
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await self.transcriptionCoordinator.transcribeMeetingChunk(at: chunkURL, backend: backend)
+                if !result.text.isEmpty {
+                    self.accumulatedMicSegments.append(SpeechSegment(start: chunkOffset, end: chunkOffset, text: result.text))
+                    fputs("[meeting] chunk transcribed: \"\(String(result.text.prefix(60)))...\"\n", stderr)
+                }
+            } catch {
+                fputs("[meeting] chunk transcription failed: \(error)\n", stderr)
+            }
+            try? FileManager.default.removeItem(at: chunkURL)
+        }
     }
 }

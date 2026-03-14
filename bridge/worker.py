@@ -99,6 +99,38 @@ class SpeechWorker:
             "model": self._backend_model,
         }
 
+    def transcribe_meeting_chunk(self, params: dict) -> dict:
+        """Transcribe a meeting audio chunk with silence detection.
+
+        Skips transcription if the chunk is mostly silence (prevents
+        Whisper hallucinations on quiet segments). Uses RMS energy threshold.
+        """
+        wav_path = params.get("wav_path")
+        if not wav_path:
+            raise WorkerError("INVALID_PARAMS", "wav_path is required")
+        self._ensure_loaded(params.get("backend"), params.get("model"))
+        audio = self._load_audio(wav_path)
+
+        # Energy-based silence detection: skip if RMS below threshold
+        rms = float(np.sqrt(np.mean(audio ** 2)))
+        silence_threshold = 0.005  # ~-46 dB, tuned for typical mic noise floor
+        if rms < silence_threshold:
+            print(f"[worker] chunk silent (rms={rms:.6f}), skipping", file=sys.stderr, flush=True)
+            return {
+                "text": "",
+                "is_silent": True,
+                "backend": self._backend_name,
+                "model": self._backend_model,
+            }
+
+        text = self._backend.transcribe(audio).strip()
+        return {
+            "text": text,
+            "is_silent": False,
+            "backend": self._backend_name,
+            "model": self._backend_model,
+        }
+
     def shutdown(self, _params: dict) -> dict:
         self._backend = None
         self._backend_name = None

@@ -92,6 +92,18 @@ final class PythonWorkerClient {
         )
     }
 
+    func transcribeMeetingChunk(wavURL: URL, option: BackendOption, completion: @escaping ResponseCompletion) {
+        send(
+            method: "transcribe_meeting_chunk",
+            params: [
+                "wav_path": wavURL.path,
+                "backend": option.backend,
+                "model": option.model,
+            ],
+            completion: completion
+        )
+    }
+
     private func send(method: String, params: [String: Any], completion: @escaping ResponseCompletion) {
         ioQueue.async {
             do {

@@ -38,6 +38,15 @@ actor TranscriptionCoordinator {
         return mapResult(payload)
     }
 
+    func transcribeMeetingChunk(at url: URL, backend: BackendOption) async throws -> SpeechTranscriptionResult {
+        let payload = try await workerClient.transcribeMeetingChunkAsync(wavURL: url, option: backend)
+        let isSilent = payload["is_silent"] as? Bool ?? false
+        if isSilent {
+            return SpeechTranscriptionResult(text: "", segments: [])
+        }
+        return mapResult(payload)
+    }
+
     func shutdown() {
         workerClient.stop()
         loadedBackend = nil
