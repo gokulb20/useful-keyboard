@@ -39,7 +39,11 @@ private final class HoverIndicatorView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard let window else { return }
-        didDrag = true
+        if !didDrag {
+            didDrag = true
+            owner?.isDragging = true
+            owner?.setHovered(false)
+        }
         let current = event.locationInWindow
         let frame = window.frame
         let newOrigin = NSPoint(
@@ -51,6 +55,7 @@ private final class HoverIndicatorView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if didDrag {
+            owner?.isDragging = false
             owner?.savePosition()
         } else {
             owner?.handleClick()
@@ -74,6 +79,7 @@ final class FloatingIndicatorController {
     private var amplitudeTimer: Timer?
     private var smoothedAmplitude: CGFloat = 0
     private var isMeetingRecording = false
+    fileprivate var isDragging = false
     var powerProvider: (() -> Float)?
     var onStopMeeting: (() -> Void)?
 
@@ -181,7 +187,7 @@ final class FloatingIndicatorController {
     }
 
     func setHovered(_ hovered: Bool) {
-        guard state == .idle, isHovered != hovered else { return }
+        guard state == .idle, !isDragging, isHovered != hovered else { return }
         hoverExitWorkItem?.cancel()
         isHovered = hovered
         let config = configStore.load()
