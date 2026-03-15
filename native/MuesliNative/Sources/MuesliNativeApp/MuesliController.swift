@@ -460,6 +460,7 @@ final class MuesliController: NSObject {
     private func handleStart() {
         if isMeetingRecording() { return }
         fputs("[muesli-native] recording start\n", stderr)
+        micActivityMonitor.noteDictationActive()
         do {
             try recorder.start()
             dictationStartedAt = Date()
