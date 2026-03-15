@@ -1,3 +1,5 @@
+> **Post-compaction recovery:** PreCompact hooks auto-generate context handover files at `Context/handoff-summary-YYYY-MM-DD-<slug>.md`. After compaction, read the latest handoff file in `Context/` to restore session memory and resume work.
+
 # Muesli
 
 Local-first macOS app that combines **dictation** (WisprFlow replacement) and **meeting transcription** (Granola replacement). One on-device STT model serves both use cases. Native Swift/AppKit, not Electron.
