@@ -3,7 +3,6 @@ import SwiftUI
 struct AboutView: View {
     let controller: MuesliController
 
-    private let controlWidth: CGFloat = 220
     private let githubURL = "https://github.com/pHequals7/muesli"
     private let donateURL = "https://buymeacoffee.com/phequals7"
 
@@ -18,59 +17,103 @@ struct AboutView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: MuesliTheme.spacing24) {
+            VStack(alignment: .leading, spacing: MuesliTheme.spacing32) {
                 Text("About")
                     .font(MuesliTheme.title1())
                     .foregroundStyle(MuesliTheme.textPrimary)
 
-                aboutSection {
+                // MARK: - App Info
+                sectionHeader("App Info")
+                aboutCard {
                     aboutRow("Version") {
                         Text(version)
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundStyle(MuesliTheme.textSecondary)
-                    }
-                    Divider().background(MuesliTheme.surfaceBorder)
-                    aboutRow("Support Development") {
-                        linkButton("Donate", color: MuesliTheme.recording, url: donateURL)
-                    }
-                    Divider().background(MuesliTheme.surfaceBorder)
-                    aboutRow("Source Code") {
-                        linkButton("View on GitHub", url: githubURL)
-                    }
-                    Divider().background(MuesliTheme.surfaceBorder)
-                    VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
-                        Text("App Data Directory")
-                            .font(MuesliTheme.body())
+                            .font(.system(size: 15, weight: .semibold, design: .monospaced))
                             .foregroundStyle(MuesliTheme.textPrimary)
-                        HStack {
-                            Text(appDataPath)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(MuesliTheme.textTertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer()
-                            openButton { openInFinder(appDataPath) }
+                    }
+
+                    Divider().background(MuesliTheme.surfaceBorder)
+
+                    aboutRow("Check for Updates") {
+                        actionButton("Check Now", icon: "arrow.triangle.2.circlepath") {
+                            // TODO: Wire to Sparkle SPUStandardUpdaterController
                         }
                     }
                 }
 
+                // MARK: - Support
+                sectionHeader("Support")
+                aboutCard {
+                    aboutRow("Support Development") {
+                        Button {
+                            if let url = URL(string: donateURL) { NSWorkspace.shared.open(url) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 12))
+                                Text("Donate")
+                                    .font(.system(size: 13, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, MuesliTheme.spacing20)
+                            .padding(.vertical, MuesliTheme.spacing8)
+                            .background(MuesliTheme.success)
+                            .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Divider().background(MuesliTheme.surfaceBorder)
+
+                    aboutRow("Source Code") {
+                        actionButton("View on GitHub", icon: "arrow.up.right.square") {
+                            if let url = URL(string: githubURL) { NSWorkspace.shared.open(url) }
+                        }
+                    }
+                }
+
+                // MARK: - Data
+                sectionHeader("Data")
+                aboutCard {
+                    VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+                        Text("App Data Directory")
+                            .font(MuesliTheme.body())
+                            .foregroundStyle(MuesliTheme.textPrimary)
+
+                        HStack {
+                            Text(appDataPath)
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(MuesliTheme.textTertiary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            actionButton("Open", icon: "folder") {
+                                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: appDataPath)
+                            }
+                        }
+                    }
+                }
+
+                // MARK: - Acknowledgements
                 sectionHeader("Acknowledgements")
-                aboutSection {
+                aboutCard {
                     acknowledgement(
                         name: "MLX by Apple",
-                        description: "On-device machine learning framework for Apple Silicon."
+                        description: "On-device machine learning framework for Apple Silicon. Powers all local transcription inference."
                     )
                     Divider().background(MuesliTheme.surfaceBorder)
                     acknowledgement(
                         name: "mlx-whisper by Apple",
-                        description: "Whisper speech-to-text engine powering local transcription."
+                        description: "Optimized Whisper speech-to-text implementation on MLX. Delivers 0.3s transcription latency."
                     )
                     Divider().background(MuesliTheme.surfaceBorder)
                     acknowledgement(
                         name: "ScreenCaptureKit by Apple",
-                        description: "System audio capture for meeting transcription."
+                        description: "System audio capture API for meeting transcription. Captures call audio including Bluetooth devices."
                     )
                 }
+
+                Spacer(minLength: MuesliTheme.spacing32)
             }
             .padding(MuesliTheme.spacing32)
         }
@@ -80,11 +123,20 @@ struct AboutView: View {
     // MARK: - Components
 
     @ViewBuilder
-    private func aboutSection(@ViewBuilder content: () -> some View) -> some View {
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(MuesliTheme.textTertiary)
+            .textCase(.uppercase)
+            .padding(.leading, 2)
+    }
+
+    @ViewBuilder
+    private func aboutCard(@ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             content()
         }
-        .padding(MuesliTheme.spacing16)
+        .padding(MuesliTheme.spacing20)
         .background(MuesliTheme.backgroundRaised)
         .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerMedium))
         .overlay(
@@ -102,16 +154,7 @@ struct AboutView: View {
             Spacer()
             control()
         }
-        .frame(minHeight: 32)
-    }
-
-    @ViewBuilder
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(MuesliTheme.textTertiary)
-            .textCase(.uppercase)
-            .padding(.leading, 2)
+        .padding(.vertical, MuesliTheme.spacing8)
     }
 
     @ViewBuilder
@@ -121,54 +164,35 @@ struct AboutView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(MuesliTheme.textPrimary)
             Text(description)
-                .font(MuesliTheme.caption())
-                .foregroundStyle(MuesliTheme.textTertiary)
+                .font(MuesliTheme.callout())
+                .foregroundStyle(MuesliTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, MuesliTheme.spacing4)
+        .padding(.vertical, MuesliTheme.spacing8)
     }
 
     @ViewBuilder
-    private func linkButton(_ title: String, color: Color = MuesliTheme.textPrimary, url: String) -> some View {
-        Button {
-            if let url = URL(string: url) {
-                NSWorkspace.shared.open(url)
-            }
-        } label: {
-            Text(title)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(color == MuesliTheme.recording ? .white : color)
-                .padding(.horizontal, MuesliTheme.spacing16)
-                .padding(.vertical, MuesliTheme.spacing8)
-                .background(color == MuesliTheme.recording ? color : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
-                .overlay(
-                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .strokeBorder(color == MuesliTheme.recording ? color : MuesliTheme.surfaceBorder, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.plain)
-    }
-
-    @ViewBuilder
-    private func openButton(action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, icon: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text("Open")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(MuesliTheme.textSecondary)
-                .padding(.horizontal, MuesliTheme.spacing12)
-                .padding(.vertical, MuesliTheme.spacing4)
-                .background(MuesliTheme.surfacePrimary)
-                .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
-                .overlay(
-                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
-                )
+            HStack(spacing: 5) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                }
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(MuesliTheme.textPrimary)
+            .padding(.horizontal, MuesliTheme.spacing16)
+            .padding(.vertical, MuesliTheme.spacing8)
+            .background(MuesliTheme.surfacePrimary)
+            .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+            .overlay(
+                RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                    .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
-    }
-
-    private func openInFinder(_ path: String) {
-        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
     }
 }
