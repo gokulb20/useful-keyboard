@@ -4,6 +4,9 @@ struct SettingsView: View {
     let appState: AppState
     let controller: MuesliController
 
+    // Uniform width for all right-side controls
+    private let controlWidth: CGFloat = 220
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: MuesliTheme.spacing24) {
@@ -12,116 +15,114 @@ struct SettingsView: View {
                     .foregroundStyle(MuesliTheme.textPrimary)
 
                 settingsSection("General") {
-                    settingsToggle(
-                        "Launch at login",
-                        isOn: appState.config.launchAtLogin
-                    ) { newValue in
-                        controller.updateConfig { $0.launchAtLogin = newValue }
+                    settingsRow("Launch at login") {
+                        settingsSwitch(isOn: appState.config.launchAtLogin) { newValue in
+                            controller.updateConfig { $0.launchAtLogin = newValue }
+                        }
                     }
-
-                    settingsToggle(
-                        "Open dashboard on launch",
-                        isOn: appState.config.openDashboardOnLaunch
-                    ) { newValue in
-                        controller.updateConfig { $0.openDashboardOnLaunch = newValue }
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Open dashboard on launch") {
+                        settingsSwitch(isOn: appState.config.openDashboardOnLaunch) { newValue in
+                            controller.updateConfig { $0.openDashboardOnLaunch = newValue }
+                        }
                     }
-
-                    settingsToggle(
-                        "Dark mode",
-                        isOn: appState.config.darkMode
-                    ) { newValue in
-                        controller.updateConfig { $0.darkMode = newValue }
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Dark mode") {
+                        settingsSwitch(isOn: appState.config.darkMode) { newValue in
+                            controller.updateConfig { $0.darkMode = newValue }
+                        }
                     }
-
-                    settingsToggle(
-                        "Show floating indicator",
-                        isOn: appState.config.showFloatingIndicator
-                    ) { newValue in
-                        controller.updateConfig { $0.showFloatingIndicator = newValue }
-                        controller.refreshIndicatorVisibility()
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Show floating indicator") {
+                        settingsSwitch(isOn: appState.config.showFloatingIndicator) { newValue in
+                            controller.updateConfig { $0.showFloatingIndicator = newValue }
+                            controller.refreshIndicatorVisibility()
+                        }
                     }
                 }
 
                 settingsSection("Transcription") {
-                    settingsPicker(
-                        "Backend",
-                        selection: appState.selectedBackend.label,
-                        options: BackendOption.all.map(\.label)
-                    ) { label in
-                        if let option = BackendOption.all.first(where: { $0.label == label }) {
-                            controller.selectBackend(option)
+                    settingsRow("Backend") {
+                        settingsMenu(
+                            selection: appState.selectedBackend.label,
+                            options: BackendOption.all.map(\.label)
+                        ) { label in
+                            if let option = BackendOption.all.first(where: { $0.label == label }) {
+                                controller.selectBackend(option)
+                            }
                         }
                     }
                 }
 
                 settingsSection("Meetings") {
-                    settingsPicker(
-                        "Summary backend",
-                        selection: appState.selectedMeetingSummaryBackend.label,
-                        options: MeetingSummaryBackendOption.all.map(\.label)
-                    ) { label in
-                        if let option = MeetingSummaryBackendOption.all.first(where: { $0.label == label }) {
-                            controller.selectMeetingSummaryBackend(option)
+                    settingsRow("Summary backend") {
+                        settingsMenu(
+                            selection: appState.selectedMeetingSummaryBackend.label,
+                            options: MeetingSummaryBackendOption.all.map(\.label)
+                        ) { label in
+                            if let option = MeetingSummaryBackendOption.all.first(where: { $0.label == label }) {
+                                controller.selectMeetingSummaryBackend(option)
+                            }
                         }
                     }
+                    Divider().background(MuesliTheme.surfaceBorder)
 
                     if appState.selectedMeetingSummaryBackend == .openAI {
-                        settingsSecureField(
-                            "API Key",
-                            text: appState.config.openAIAPIKey,
-                            placeholder: "sk-..."
-                        ) { newValue in
-                            controller.updateConfig { $0.openAIAPIKey = newValue }
+                        settingsRow("API Key") {
+                            PastableSecureField(
+                                text: appState.config.openAIAPIKey,
+                                placeholder: "sk-...",
+                                onChange: { val in controller.updateConfig { $0.openAIAPIKey = val } }
+                            )
+                            .frame(width: controlWidth, height: 22)
                         }
-
-                        settingsModelPicker(
-                            currentModel: appState.config.openAIModel,
-                            presets: SummaryModelPreset.openAIModels
-                        ) { newValue in
-                            controller.updateConfig { $0.openAIModel = newValue }
+                        Divider().background(MuesliTheme.surfaceBorder)
+                        settingsRow("Model") {
+                            settingsModelMenu(
+                                currentModel: appState.config.openAIModel,
+                                presets: SummaryModelPreset.openAIModels
+                            ) { val in controller.updateConfig { $0.openAIModel = val } }
                         }
-
-                        keyStatus(key: appState.config.openAIAPIKey)
+                        keyStatusRow(key: appState.config.openAIAPIKey)
                     } else {
-                        settingsSecureField(
-                            "API Key",
-                            text: appState.config.openRouterAPIKey,
-                            placeholder: "sk-or-..."
-                        ) { newValue in
-                            controller.updateConfig { $0.openRouterAPIKey = newValue }
+                        settingsRow("API Key") {
+                            PastableSecureField(
+                                text: appState.config.openRouterAPIKey,
+                                placeholder: "sk-or-...",
+                                onChange: { val in controller.updateConfig { $0.openRouterAPIKey = val } }
+                            )
+                            .frame(width: controlWidth, height: 22)
                         }
-
-                        settingsModelPicker(
-                            currentModel: appState.config.openRouterModel,
-                            presets: SummaryModelPreset.openRouterModels
-                        ) { newValue in
-                            controller.updateConfig { $0.openRouterModel = newValue }
+                        Divider().background(MuesliTheme.surfaceBorder)
+                        settingsRow("Model") {
+                            settingsModelMenu(
+                                currentModel: appState.config.openRouterModel,
+                                presets: SummaryModelPreset.openRouterModels
+                            ) { val in controller.updateConfig { $0.openRouterModel = val } }
                         }
-
-                        keyStatus(key: appState.config.openRouterAPIKey)
+                        keyStatusRow(key: appState.config.openRouterAPIKey)
                     }
 
-                    settingsToggle(
-                        "Auto-record calendar meetings",
-                        isOn: appState.config.autoRecordMeetings
-                    ) { newValue in
-                        controller.updateConfig { $0.autoRecordMeetings = newValue }
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Auto-record calendar meetings") {
+                        settingsSwitch(isOn: appState.config.autoRecordMeetings) { newValue in
+                            controller.updateConfig { $0.autoRecordMeetings = newValue }
+                        }
                     }
-
-                    settingsToggle(
-                        "Notify when meeting app detected",
-                        isOn: appState.config.showMeetingDetectionNotification
-                    ) { newValue in
-                        controller.updateConfig { $0.showMeetingDetectionNotification = newValue }
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Notify when meeting detected") {
+                        settingsSwitch(isOn: appState.config.showMeetingDetectionNotification) { newValue in
+                            controller.updateConfig { $0.showMeetingDetectionNotification = newValue }
+                        }
                     }
                 }
 
                 settingsSection("Data") {
                     HStack(spacing: MuesliTheme.spacing12) {
-                        destructiveButton("Clear dictation history") {
+                        actionButton("Clear dictation history", role: .destructive) {
                             controller.clearDictationHistory()
                         }
-                        destructiveButton("Clear meeting history") {
+                        actionButton("Clear meeting history", role: .destructive) {
                             controller.clearMeetingHistory()
                         }
                     }
@@ -132,16 +133,18 @@ struct SettingsView: View {
         .background(MuesliTheme.backgroundBase)
     }
 
+    // MARK: - Layout Primitives
+
     @ViewBuilder
     private func settingsSection(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+        VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
             Text(title)
-                .font(MuesliTheme.headline())
-                .foregroundStyle(MuesliTheme.textSecondary)
-                .textCase(.uppercase)
                 .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(MuesliTheme.textTertiary)
+                .textCase(.uppercase)
+                .padding(.leading, 2)
 
-            VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
+            VStack(alignment: .leading, spacing: 0) {
                 content()
             }
             .padding(MuesliTheme.spacing16)
@@ -154,85 +157,52 @@ struct SettingsView: View {
         }
     }
 
+    /// Standardized row: label on left, control on right, consistent 36pt height
     @ViewBuilder
-    private func settingsToggle(_ title: String, isOn: Bool, onChange: @escaping (Bool) -> Void) -> some View {
-        Toggle(isOn: Binding(
-            get: { isOn },
-            set: { onChange($0) }
+    private func settingsRow(_ label: String, @ViewBuilder control: () -> some View) -> some View {
+        HStack {
+            Text(label)
+                .font(MuesliTheme.body())
+                .foregroundStyle(MuesliTheme.textPrimary)
+            Spacer()
+            control()
+        }
+        .frame(minHeight: 32)
+    }
+
+    // MARK: - Controls
+
+    @ViewBuilder
+    private func settingsSwitch(isOn: Bool, onChange: @escaping (Bool) -> Void) -> some View {
+        Toggle("", isOn: Binding(get: { isOn }, set: { onChange($0) }))
+            .toggleStyle(.switch)
+            .tint(MuesliTheme.accent)
+            .labelsHidden()
+    }
+
+    @ViewBuilder
+    private func settingsMenu(selection: String, options: [String], onChange: @escaping (String) -> Void) -> some View {
+        Picker("", selection: Binding(get: { selection }, set: { onChange($0) })) {
+            ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .frame(width: controlWidth)
+    }
+
+    @ViewBuilder
+    private func settingsModelMenu(currentModel: String, presets: [SummaryModelPreset], onChange: @escaping (String) -> Void) -> some View {
+        Picker("", selection: Binding(
+            get: { currentModel.isEmpty ? (presets.first?.id ?? "") : currentModel },
+            set: { onChange($0 == presets.first?.id ? "" : $0) }
         )) {
-            Text(title)
-                .font(MuesliTheme.body())
-                .foregroundStyle(MuesliTheme.textPrimary)
+            ForEach(presets, id: \.id) { Text($0.label).tag($0.id) }
         }
-        .toggleStyle(.switch)
-        .tint(MuesliTheme.accent)
+        .pickerStyle(.menu)
+        .frame(width: controlWidth)
     }
 
     @ViewBuilder
-    private func settingsPicker(_ title: String, selection: String, options: [String], onChange: @escaping (String) -> Void) -> some View {
-        HStack {
-            Text(title)
-                .font(MuesliTheme.body())
-                .foregroundStyle(MuesliTheme.textPrimary)
-            Spacer()
-            Picker("", selection: Binding(
-                get: { selection },
-                set: { onChange($0) }
-            )) {
-                ForEach(options, id: \.self) { option in
-                    Text(option).tag(option)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 200)
-        }
-    }
-
-    @ViewBuilder
-    private func settingsSecureField(_ title: String, text: String, placeholder: String, onChange: @escaping (String) -> Void) -> some View {
-        HStack {
-            Text(title)
-                .font(MuesliTheme.body())
-                .foregroundStyle(MuesliTheme.textPrimary)
-            Spacer()
-            PastableSecureField(text: text, placeholder: placeholder, onChange: onChange)
-                .frame(maxWidth: 240, maxHeight: 22)
-        }
-    }
-
-    @ViewBuilder
-    private func settingsModelPicker(currentModel: String, presets: [SummaryModelPreset], onChange: @escaping (String) -> Void) -> some View {
-        HStack {
-            Text("Model")
-                .font(MuesliTheme.body())
-                .foregroundStyle(MuesliTheme.textPrimary)
-            Spacer()
-            Picker("", selection: Binding(
-                get: {
-                    // If current model matches a preset, select it; otherwise select first (default)
-                    if currentModel.isEmpty { return presets.first?.id ?? "" }
-                    return currentModel
-                },
-                set: { newValue in
-                    // If selecting the default (first preset), store empty string so MeetingSummaryClient uses its default
-                    if newValue == presets.first?.id {
-                        onChange("")
-                    } else {
-                        onChange(newValue)
-                    }
-                }
-            )) {
-                ForEach(presets, id: \.id) { preset in
-                    Text(preset.label).tag(preset.id)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 240)
-        }
-    }
-
-    @ViewBuilder
-    private func keyStatus(key: String) -> some View {
+    private func keyStatusRow(key: String) -> some View {
         HStack(spacing: 6) {
             Spacer()
             Circle()
@@ -242,21 +212,26 @@ struct SettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(key.isEmpty ? MuesliTheme.textTertiary : MuesliTheme.success)
         }
+        .frame(minHeight: 20)
     }
 
     @ViewBuilder
-    private func destructiveButton(_ title: String, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ title: String, role: ButtonRole? = nil, action: @escaping () -> Void) -> some View {
+        let isDestructive = role == .destructive
         Button(action: action) {
             Text(title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(MuesliTheme.recording)
+                .foregroundStyle(isDestructive ? MuesliTheme.recording : MuesliTheme.textPrimary)
                 .padding(.horizontal, MuesliTheme.spacing16)
                 .padding(.vertical, MuesliTheme.spacing8)
-                .background(MuesliTheme.recording.opacity(0.1))
+                .background(isDestructive ? MuesliTheme.recording.opacity(0.1) : MuesliTheme.surfacePrimary)
                 .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
                 .overlay(
                     RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .strokeBorder(MuesliTheme.recording.opacity(0.2), lineWidth: 1)
+                        .strokeBorder(
+                            isDestructive ? MuesliTheme.recording.opacity(0.2) : MuesliTheme.surfaceBorder,
+                            lineWidth: 1
+                        )
                 )
         }
         .buttonStyle(.plain)
