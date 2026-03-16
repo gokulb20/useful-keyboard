@@ -66,7 +66,7 @@ struct DictationsView: View {
                     Text("No dictations yet")
                         .font(MuesliTheme.title3())
                         .foregroundStyle(MuesliTheme.textSecondary)
-                    Text("Hold Left Cmd to start dictating")
+                    Text("Hold \(appState.config.dictationHotkey.label) to start dictating")
                         .font(MuesliTheme.callout())
                         .foregroundStyle(MuesliTheme.textTertiary)
                 }

@@ -4,20 +4,86 @@ struct BackendOption: Equatable {
     let backend: String
     let model: String
     let label: String
+    let sizeLabel: String
+    let description: String
+    let recommended: Bool
 
-    static let whisper = BackendOption(
+    static let parakeetMultilingual = BackendOption(
+        backend: "fluidaudio",
+        model: "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+        label: "Parakeet v3",
+        sizeLabel: "~250 MB",
+        description: "Multilingual, 25 languages. Runs on Apple Neural Engine.",
+        recommended: true
+    )
+
+    static let parakeetEnglish = BackendOption(
+        backend: "fluidaudio",
+        model: "FluidInference/parakeet-tdt-0.6b-v2-coreml",
+        label: "Parakeet v2",
+        sizeLabel: "~250 MB",
+        description: "English-only, highest recall. Runs on Apple Neural Engine.",
+        recommended: false
+    )
+
+    static let whisperSmall = BackendOption(
         backend: "whisper",
-        model: "mlx-community/whisper-small.en-mlx",
-        label: "Whisper Small"
+        model: "ggml-small.en-q5_1",
+        label: "Whisper Small",
+        sizeLabel: "~190 MB",
+        description: "Fast, English-optimized. Quantized for smaller download.",
+        recommended: false
     )
 
-    static let qwen = BackendOption(
+    static let whisperMedium = BackendOption(
+        backend: "whisper",
+        model: "ggml-medium.en",
+        label: "Whisper Medium",
+        sizeLabel: "~1.5 GB",
+        description: "Better accuracy, English-only. Good balance of speed and quality.",
+        recommended: false
+    )
+
+    static let whisperLargeTurbo = BackendOption(
+        backend: "whisper",
+        model: "ggml-large-v3-turbo-q5_0",
+        label: "Whisper Large Turbo",
+        sizeLabel: "~600 MB",
+        description: "Highest accuracy, multilingual. Quantized for faster inference.",
+        recommended: false
+    )
+
+    static let nemotronStreaming = BackendOption(
+        backend: "nemotron",
+        model: "FluidInference/nemotron-speech-streaming-en-0.6b-coreml",
+        label: "Nemotron Streaming",
+        sizeLabel: "~600 MB",
+        description: "NVIDIA streaming RNNT. English-only, ultra-low latency. CoreML on ANE.",
+        recommended: false
+    )
+
+    // Default alias
+    static let whisper = parakeetMultilingual
+
+    /// Models available for download and use.
+    static let all: [BackendOption] = [
+        .parakeetMultilingual, .parakeetEnglish,
+        .whisperSmall, .whisperMedium, .whisperLargeTurbo,
+    ]
+
+    static let qwen3Asr = BackendOption(
         backend: "qwen",
-        model: "mlx-community/Qwen3-ASR-0.6B-4bit",
-        label: "Qwen3 ASR 0.6B 4-bit"
+        model: "FluidInference/qwen3-asr-0.6b-coreml",
+        label: "Qwen3 ASR",
+        sizeLabel: "~180 MB",
+        description: "Multilingual, 52 languages. CoreML autoregressive decoder on ANE.",
+        recommended: false
     )
 
-    static let all: [BackendOption] = [.whisper, .qwen]
+    /// Models coming soon — shown greyed out in the Models tab.
+    static let comingSoon: [BackendOption] = [
+        .qwen3Asr, .nemotronStreaming,
+    ]
 }
 
 struct SummaryModelPreset {
@@ -122,7 +188,9 @@ struct AppConfig: Codable {
     var meetingSummaryModel: String = ""
     var hasCompletedOnboarding: Bool = false
     var userName: String = ""
-    var customWords: [CustomWord] = []
+    var customWords: [CustomWord] = [
+        CustomWord(word: "muesli", replacement: "muesli"),
+    ]
 
     enum CodingKeys: String, CodingKey {
         case dictationHotkey = "dictation_hotkey"

@@ -80,6 +80,7 @@ final class FloatingIndicatorController {
     fileprivate var isDragging = false
     var powerProvider: (() -> Float)?
     var onStopMeeting: (() -> Void)?
+    var hotkeyLabel: String = "Left Cmd"
 
     init(configStore: ConfigStore) {
         self.configStore = configStore
@@ -411,7 +412,7 @@ final class FloatingIndicatorController {
                 .colorWith(hex: 0x000000, alpha: isHovered ? 0.96 : 0.66),
                 .colorWith(hex: 0xFFFFFF, alpha: 0.18),
                 "🎤",
-                isHovered ? "Hold Left Cmd to dictate" : "",
+                isHovered ? "Hold \(hotkeyLabel) to dictate" : "",
                 .colorWith(hex: 0xFFFFFF, alpha: 0.92),
                 .colorWith(hex: 0xFFFFFF, alpha: 0.92),
                 isHovered ? 1.0 : 0.82
