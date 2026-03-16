@@ -260,8 +260,8 @@ final class FloatingIndicatorController {
                     iconLabel.animator().alphaValue = 1
                     iconLabel.stringValue = "\u{2715}"  // ✕
                     iconLabel.textColor = .white.withAlphaComponent(0.45)
-                    iconLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
-                    iconLabel.frame = NSRect(x: 8, y: (targetFrame.height - 16) / 2, width: 16, height: 16)
+                    iconLabel.font = NSFont.systemFont(ofSize: 7, weight: .semibold)
+                    iconLabel.frame = NSRect(x: 10, y: (targetFrame.height - 12) / 2, width: 12, height: 12)
 
                     textLabel.animator().alphaValue = 0
                     textLabel.isHidden = true
@@ -345,15 +345,15 @@ final class FloatingIndicatorController {
         removeStopLayer()
         guard let contentView else { return }
 
-        let sq: CGFloat = 10
+        let sq: CGFloat = 6
         let stop = CALayer()
         stop.frame = CGRect(
-            x: size.width - sq - 10,
+            x: size.width - sq - 11,
             y: (size.height - sq) / 2,
             width: sq,
             height: sq
         )
-        stop.cornerRadius = 2
+        stop.cornerRadius = 1
         stop.backgroundColor = NSColor.white.withAlphaComponent(0.85).cgColor
 
         contentView.layer?.addSublayer(stop)
