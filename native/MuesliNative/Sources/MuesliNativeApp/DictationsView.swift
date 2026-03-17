@@ -1,9 +1,25 @@
 import SwiftUI
 import MuesliCore
 
+enum DictationFilter: Hashable {
+    case all, last2Days, lastWeek, last2Weeks, lastMonth, last3Months
+
+    var label: String {
+        switch self {
+        case .all: return "All time"
+        case .last2Days: return "Last 2 days"
+        case .lastWeek: return "Last week"
+        case .last2Weeks: return "Last 2 weeks"
+        case .lastMonth: return "Last month"
+        case .last3Months: return "Last 3 months"
+        }
+    }
+}
+
 struct DictationsView: View {
     let appState: AppState
     let controller: MuesliController
+    @State private var selectedFilter: DictationFilter = .all
 
     private var groupedDictations: [(header: String, records: [DictationRecord])] {
         let calendar = Calendar.current
@@ -75,12 +91,21 @@ struct DictationsView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: MuesliTheme.spacing20) {
-                        ForEach(groupedDictations, id: \.header) { group in
+                        ForEach(Array(groupedDictations.enumerated()), id: \.element.header) { index, group in
                             VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
-                                Text(group.header)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(MuesliTheme.textTertiary)
-                                    .padding(.leading, MuesliTheme.spacing4)
+                                HStack {
+                                    Text(group.header)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(MuesliTheme.textTertiary)
+                                        .padding(.leading, MuesliTheme.spacing4)
+
+                                    Spacer()
+
+                                    // Filter button on the first group header
+                                    if index == 0 {
+                                        dateFilterButton
+                                    }
+                                }
 
                                 VStack(spacing: 1) {
                                     ForEach(group.records) { record in
@@ -99,11 +124,98 @@ struct DictationsView: View {
                                 )
                             }
                         }
+
+                        // Infinite scroll trigger
+                        if appState.hasMoreDictations {
+                            Color.clear
+                                .frame(height: 1)
+                                .onAppear {
+                                    controller.loadMoreDictations()
+                                }
+                        }
                     }
                     .padding(.horizontal, MuesliTheme.spacing24)
                     .padding(.bottom, MuesliTheme.spacing24)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var dateFilterButton: some View {
+        Menu {
+            ForEach(availableFilters, id: \.self) { filter in
+                Button {
+                    selectedFilter = filter
+                    applyFilter(filter)
+                } label: {
+                    HStack {
+                        Text(filter.label)
+                        if selectedFilter == filter {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 11))
+                if selectedFilter != .all {
+                    Text(selectedFilter.label)
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundStyle(selectedFilter != .all ? MuesliTheme.accent : MuesliTheme.textTertiary)
+            .padding(.horizontal, selectedFilter != .all ? 8 : 0)
+            .padding(.vertical, 3)
+            .background(selectedFilter != .all ? MuesliTheme.accent.opacity(0.12) : Color.clear)
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    /// Build filter options dynamically based on the date range of actual data.
+    private var availableFilters: [DictationFilter] {
+        var filters: [DictationFilter] = [.all]
+        let calendar = Calendar.current
+        let now = Date()
+
+        // Check oldest dictation to determine which filters make sense
+        let oldestDate: Date? = appState.dictationRows.last.flatMap { parseDate($0.timestamp) }
+            ?? appState.dictationRows.first.flatMap { parseDate($0.timestamp) }
+
+        guard let oldest = oldestDate else { return filters }
+        let daysSinceOldest = calendar.dateComponents([.day], from: oldest, to: now).day ?? 0
+
+        // Always show "Last 2 days" if data spans more than today
+        if daysSinceOldest >= 1 { filters.append(.last2Days) }
+        if daysSinceOldest >= 3 { filters.append(.lastWeek) }
+        if daysSinceOldest >= 8 { filters.append(.last2Weeks) }
+        if daysSinceOldest >= 15 { filters.append(.lastMonth) }
+        if daysSinceOldest >= 31 { filters.append(.last3Months) }
+
+        return filters
+    }
+
+    private func applyFilter(_ filter: DictationFilter) {
+        let calendar = Calendar.current
+        let now = Date()
+
+        switch filter {
+        case .all:
+            controller.clearDictationFilter()
+        case .last2Days:
+            controller.filterDictations(from: calendar.date(byAdding: .day, value: -2, to: now), to: nil)
+        case .lastWeek:
+            controller.filterDictations(from: calendar.date(byAdding: .day, value: -7, to: now), to: nil)
+        case .last2Weeks:
+            controller.filterDictations(from: calendar.date(byAdding: .day, value: -14, to: now), to: nil)
+        case .lastMonth:
+            controller.filterDictations(from: calendar.date(byAdding: .month, value: -1, to: now), to: nil)
+        case .last3Months:
+            controller.filterDictations(from: calendar.date(byAdding: .month, value: -3, to: now), to: nil)
         }
     }
 

@@ -111,15 +111,21 @@ public final class DictationStore {
         }
     }
 
-    public func recentDictations(limit: Int = 10) throws -> [DictationRecord] {
+    public func recentDictations(limit: Int = 10, offset: Int = 0, fromDate: String? = nil, toDate: String? = nil) throws -> [DictationRecord] {
         let db = try openDatabase()
         defer { sqlite3_close(db) }
+
+        var conditions: [String] = []
+        if let fromDate { conditions.append("timestamp >= '\(fromDate)'") }
+        if let toDate { conditions.append("timestamp <= '\(toDate)'") }
+        let whereClause = conditions.isEmpty ? "" : "WHERE " + conditions.joined(separator: " AND ")
 
         let sql = """
         SELECT id, timestamp, duration_seconds, raw_text, app_context, word_count
         FROM dictations
+        \(whereClause)
         ORDER BY id DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -127,6 +133,7 @@ public final class DictationStore {
         }
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_int(statement, 1, Int32(limit))
+        sqlite3_bind_int(statement, 2, Int32(offset))
 
         var rows: [DictationRecord] = []
         while sqlite3_step(statement) == SQLITE_ROW {

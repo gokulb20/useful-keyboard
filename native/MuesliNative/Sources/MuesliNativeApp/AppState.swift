@@ -36,6 +36,12 @@ final class AppState {
     var isMeetingRecording: Bool = false
     var isChatGPTAuthenticated: Bool = false
 
+    // Dictation pagination & filtering
+    var dictationPageSize: Int = 50
+    var dictationFromDate: String? = nil
+    var dictationToDate: String? = nil
+    var hasMoreDictations: Bool = true
+
     // Navigation
     var selectedTab: DashboardTab = .dictations
 

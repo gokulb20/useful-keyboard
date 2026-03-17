@@ -238,7 +238,14 @@ final class MuesliController: NSObject {
     }
 
     func syncAppState() {
-        appState.dictationRows = (try? dictationStore.recentDictations(limit: 50)) ?? []
+        let rows = (try? dictationStore.recentDictations(
+            limit: appState.dictationPageSize,
+            offset: 0,
+            fromDate: appState.dictationFromDate,
+            toDate: appState.dictationToDate
+        )) ?? []
+        appState.dictationRows = rows
+        appState.hasMoreDictations = rows.count >= appState.dictationPageSize
         appState.meetingRows = (try? dictationStore.recentMeetings(limit: 50)) ?? []
         appState.folders = (try? dictationStore.listFolders()) ?? []
         appState.dictationStats = dictationStats()
@@ -481,6 +488,33 @@ final class MuesliController: NSObject {
 
     func moveMeeting(id: Int64, toFolder folderID: Int64?) {
         try? dictationStore.moveMeeting(id: id, toFolder: folderID)
+        syncAppState()
+    }
+
+    func loadMoreDictations() {
+        guard appState.hasMoreDictations else { return }
+        let offset = appState.dictationRows.count
+        let more = (try? dictationStore.recentDictations(
+            limit: appState.dictationPageSize,
+            offset: offset,
+            fromDate: appState.dictationFromDate,
+            toDate: appState.dictationToDate
+        )) ?? []
+        appState.dictationRows.append(contentsOf: more)
+        appState.hasMoreDictations = more.count >= appState.dictationPageSize
+    }
+
+    func filterDictations(from: Date?, to: Date?) {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        appState.dictationFromDate = from.map { formatter.string(from: $0) }
+        appState.dictationToDate = to.map { formatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: $0)!) }
+        syncAppState()
+    }
+
+    func clearDictationFilter() {
+        appState.dictationFromDate = nil
+        appState.dictationToDate = nil
         syncAppState()
     }
 
