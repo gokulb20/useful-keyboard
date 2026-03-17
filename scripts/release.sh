@@ -13,8 +13,9 @@ set -euo pipefail
 #   - Notary profile stored: xcrun notarytool store-credentials MuesliNotary
 #   - gh CLI authenticated
 #
-# Usage: ./scripts/release.sh <version>
-#   e.g.: ./scripts/release.sh 0.4.0
+# Usage: ./scripts/release.sh [version]
+#   e.g.: ./scripts/release.sh 0.5.0
+#   If no version given, auto-increments patch from latest GitHub release.
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE_NAME="${MUESLI_NOTARY_PROFILE:-MuesliNotary}"
@@ -24,9 +25,25 @@ OUTPUT_DIR="$ROOT/dist-release"
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  echo "Usage: ./scripts/release.sh <version>" >&2
-  echo "  e.g.: ./scripts/release.sh 0.4.0" >&2
-  exit 1
+  # Auto-increment: get latest release tag, bump patch version
+  LATEST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+  if [[ -n "$LATEST_TAG" ]]; then
+    LATEST_VERSION="${LATEST_TAG#v}"
+    IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+    # Strip any pre-release suffix from patch (e.g., "0-beta.1" → "0")
+    PATCH="${PATCH%%[-+]*}"
+    PATCH=$((PATCH + 1))
+    VERSION="${MAJOR}.${MINOR}.${PATCH}"
+    echo "Auto-incremented version: ${LATEST_TAG} → v${VERSION}"
+  else
+    VERSION="0.1.0"
+    echo "No previous releases found, starting at v${VERSION}"
+  fi
+  echo ""
+  read -p "Release as v${VERSION}? [Y/n] " confirm
+  if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
+    read -p "Enter version: " VERSION
+  fi
 fi
 
 echo "=== Muesli Release v${VERSION} ==="
