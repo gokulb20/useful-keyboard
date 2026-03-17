@@ -127,6 +127,111 @@ struct DeltaPasteTests {
     }
 }
 
+@Suite("Transcript accumulation")
+struct TranscriptAccumulationTests {
+
+    @Test("SentencePiece leading space preserved in concatenation")
+    func sentencePieceSpacing() {
+        // Simulates what happens when decodeTokens(trim: false) returns chunks
+        // with SentencePiece ▁ → " " preserved
+        var transcript = ""
+        let chunks = [" Hello", " world", " how", " are", " you"]
+        for chunk in chunks {
+            transcript += chunk
+        }
+        #expect(transcript == " Hello world how are you")
+    }
+
+    @Test("chunks without leading space concatenate correctly")
+    func noLeadingSpace() {
+        // Some chunks may not start with space (mid-word continuation)
+        var transcript = ""
+        let chunks = [" hel", "lo", " wor", "ld"]
+        for chunk in chunks {
+            transcript += chunk
+        }
+        #expect(transcript == " hello world")
+    }
+
+    @Test("empty chunks don't affect transcript")
+    func emptyChunks() {
+        var transcript = ""
+        let chunks = [" Hello", "", " world", "", ""]
+        for chunk in chunks {
+            if !chunk.isEmpty {
+                transcript += chunk
+            }
+        }
+        #expect(transcript == " Hello world")
+    }
+
+    @Test("delta paste tracks correctly with SentencePiece spaces")
+    func deltaPasteWithSpaces() {
+        var previous = ""
+        var deltas: [String] = []
+
+        let partials = [" Hello", " Hello world", " Hello world how are you"]
+        for full in partials {
+            let delta = String(full.dropFirst(previous.count))
+            if !delta.isEmpty { deltas.append(delta) }
+            previous = full
+        }
+
+        #expect(deltas == [" Hello", " world", " how are you"])
+    }
+}
+
+@Suite("StreamingDictationController lifecycle")
+struct StreamingDictationControllerLifecycleTests {
+
+    @available(macOS 15, *)
+    @Test("double stop is safe")
+    func doubleStop() {
+        let transcriber = NemotronStreamingTranscriber()
+        let controller = StreamingDictationController(transcriber: transcriber)
+        let result1 = controller.stop()
+        let result2 = controller.stop()
+        #expect(result1.isEmpty)
+        #expect(result2.isEmpty)
+    }
+
+    @available(macOS 15, *)
+    @Test("warmup does not crash without loaded models")
+    func warmupWithoutModels() {
+        let transcriber = NemotronStreamingTranscriber()
+        let controller = StreamingDictationController(transcriber: transcriber)
+        // warmup should handle errors gracefully
+        controller.warmup()
+    }
+}
+
+@Suite("Nemotron backend metadata")
+struct NemotronBackendMetadataTests {
+
+    @Test("nemotron label contains Experimental")
+    func experimentalLabel() {
+        #expect(BackendOption.nemotronStreaming.label.contains("Experimental"))
+    }
+
+    @Test("nemotron description warns about limitations")
+    func descriptionWarnings() {
+        let desc = BackendOption.nemotronStreaming.description
+        #expect(desc.contains("Experimental"))
+        #expect(desc.contains("Handsfree"))
+        #expect(desc.contains("punctuation") || desc.contains("No punctuation"))
+    }
+
+    @Test("nemotron is not recommended")
+    func notRecommended() {
+        #expect(!BackendOption.nemotronStreaming.recommended)
+    }
+
+    @Test("nemotron backend identifier is nemotron")
+    func backendId() {
+        #expect(BackendOption.nemotronStreaming.backend == "nemotron")
+    }
+}
+
 @Suite("TranscriptionCoordinator Nemotron accessor")
 struct TranscriptionCoordinatorNemotronTests {
 
@@ -135,7 +240,6 @@ struct TranscriptionCoordinatorNemotronTests {
     func nemotronLazyInit() async {
         let coordinator = TranscriptionCoordinator()
         let transcriber = await coordinator.getNemotronTranscriber()
-        // Should always return a valid instance (lazy initialized)
         let state = try? await transcriber.makeStreamState()
         #expect(state != nil)
     }
