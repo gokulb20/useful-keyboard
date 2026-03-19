@@ -59,6 +59,12 @@ Run `./scripts/release.sh [version]` — it automates steps 1-9. This checklist 
   - Must show `accepted` and `source=Notarized Developer ID`
   - If it shows `rejected` — the app wasn't stapled before DMG creation. Go back to step 2.
 
+- [ ] **Verify DMG has hardened runtime:**
+  ```bash
+  codesign -dvvv dist-release/Muesli-X.Y.Z.dmg 2>&1 | grep "flags"
+  ```
+  - Must show `flags=0x10000(runtime)` — if missing, `create_dmg.sh` is broken
+
 - [ ] **Install and launch:**
   ```bash
   cp -R "/Volumes/Muesli/Muesli.app" /Applications/Muesli.app
