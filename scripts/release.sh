@@ -147,6 +147,15 @@ if ! echo "$STAPLE_RESULT" | grep -q "worked"; then
   exit 1
 fi
 
+# Verify DMG itself has hardened runtime flag
+DMG_FLAGS=$(codesign -dvvv "$DMG_PATH" 2>&1)
+if ! echo "$DMG_FLAGS" | grep -q "runtime"; then
+  echo ""
+  echo "  RELEASE ABORTED: DMG is missing hardened runtime flag."
+  exit 1
+fi
+echo "  DMG hardened runtime verified."
+
 echo "  Verified: app inside DMG is accepted by Gatekeeper and stapled."
 echo ""
 

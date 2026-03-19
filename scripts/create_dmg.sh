@@ -46,7 +46,7 @@ hdiutil convert "$TEMP_DMG" -format UDZO -o "$DMG_PATH"
 rm -f "$TEMP_DMG"
 
 # Sign the DMG
-codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
+codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH"
 
 echo "DMG created: $DMG_PATH ($(du -sh "$DMG_PATH" | cut -f1))"
 echo "Signed with: $SIGN_IDENTITY"

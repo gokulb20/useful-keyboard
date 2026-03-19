@@ -79,9 +79,9 @@ cat > "$STAGED_APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
   <key>CFBundleVersion</key>
-  <string>0.5.3</string>
+  <string>0.5.4</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.5.3</string>
+  <string>0.5.4</string>
   <key>CFBundleExecutable</key>
   <string>$APP_EXECUTABLE_NAME</string>
   <key>CFBundlePackageType</key>
@@ -161,6 +161,14 @@ if [[ "$SKIP_SIGN" != "1" ]]; then
     --entitlements "$ENTITLEMENTS" \
     --sign "$SIGN_IDENTITY" \
     "$APP_DIR"
+
+  # Deep-verify entire bundle — fail fast if any component has an invalid signature
+  echo "Verifying deep signature..."
+  if ! codesign --verify --deep --strict "$APP_DIR" 2>&1; then
+    echo "ERROR: Deep signature verification failed" >&2
+    exit 1
+  fi
+  echo "  Deep signature valid."
 else
   echo "Skipping codesign because MUESLI_SKIP_SIGN=1"
 fi
