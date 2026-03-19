@@ -1,11 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": null,
-  "outputDirectory": "site",
+  "outputDirectory": "docs",
   "git": {
     "deploymentEnabled": {
       "main": true
     }
   },
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- site/"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- docs/"
 }

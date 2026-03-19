@@ -51,8 +51,8 @@ echo ""
 
 # --- Step 0: Update version in build script ---
 echo "[0/6] Setting version to ${VERSION}..."
-sed -i '' "s/CFBundleVersion<\/key>.*<string>[^<]*<\/string>/CFBundleVersion<\/key>\n  <string>${VERSION}<\/string>/" "$ROOT/scripts/build_native_app.sh"
-sed -i '' "s/CFBundleShortVersionString<\/key>.*<string>[^<]*<\/string>/CFBundleShortVersionString<\/key>\n  <string>${VERSION}<\/string>/" "$ROOT/scripts/build_native_app.sh"
+sed -i '' "/CFBundleVersion<\/key>/{n;s/<string>[^<]*<\/string>/<string>${VERSION}<\/string>/;}" "$ROOT/scripts/build_native_app.sh"
+sed -i '' "/CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<string>${VERSION}<\/string>/;}" "$ROOT/scripts/build_native_app.sh"
 
 # --- Step 1: Run tests ---
 echo "[1/6] Running tests..."
@@ -103,17 +103,17 @@ echo ""
 echo "[6/7] Generating appcast..."
 GENERATE_APPCAST="$ROOT/native/MuesliNative/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
 if [[ -x "$GENERATE_APPCAST" ]]; then
-  "$GENERATE_APPCAST" "$OUTPUT_DIR" -o "$ROOT/site/appcast.xml"
-  echo "  Appcast updated at site/appcast.xml"
+  "$GENERATE_APPCAST" "$OUTPUT_DIR" -o "$ROOT/docs/appcast.xml"
+  echo "  Appcast updated at docs/appcast.xml"
 else
-  echo "  Warning: generate_appcast not found — update site/appcast.xml manually"
+  echo "  Warning: generate_appcast not found — update docs/appcast.xml manually"
 fi
 
 # --- Step 7: GitHub Release ---
 echo "[7/7] Creating GitHub release v${VERSION}..."
 TAG="v${VERSION}"
 
-git add site/appcast.xml
+git add docs/appcast.xml
 git commit -m "Update appcast for v${VERSION}" --allow-empty
 git tag -a "$TAG" -m "Release ${VERSION}"
 git push origin main "$TAG"
