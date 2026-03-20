@@ -54,3 +54,38 @@ struct TranscriptionCoordinatorTests {
         #expect(backends == expected, "BackendOption.all backends should match expected set")
     }
 }
+
+@Suite("TranscriptionEngineArtifactsFilter")
+struct TranscriptionEngineArtifactsFilterTests {
+
+    @Test("returns empty string for known artifact")
+    func blankAudioArtifact() {
+        #expect(TranscriptionEngineArtifactsFilter.apply("[blank_audio]") == "")
+    }
+
+    @Test("matching is case-insensitive")
+    func caseInsensitive() {
+        #expect(TranscriptionEngineArtifactsFilter.apply("[BLANK_AUDIO]") == "")
+    }
+
+    @Test("trims surrounding whitespace before matching")
+    func trailingWhitespace() {
+        #expect(TranscriptionEngineArtifactsFilter.apply("  [blank_audio]  \n") == "")
+    }
+
+    @Test("passes through normal transcription unchanged")
+    func normalTextUnchanged() {
+        #expect(TranscriptionEngineArtifactsFilter.apply("Hello world") == "Hello world")
+    }
+
+    @Test("passes through empty string unchanged")
+    func emptyTextUnchanged() {
+        #expect(TranscriptionEngineArtifactsFilter.apply("") == "")
+    }
+
+    @Test("does not strip artifact when it appears mid-sentence")
+    func midSentenceNotStripped() {
+        let text = "Hello [blank_audio] world"
+        #expect(TranscriptionEngineArtifactsFilter.apply(text) == text)
+    }
+}
