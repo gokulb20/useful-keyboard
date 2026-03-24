@@ -460,6 +460,18 @@ final class MuesliController: NSObject {
         }
     }
 
+    func showMeetingsHome(folderID: Int64? = nil) {
+        appState.selectedTab = .meetings
+        appState.selectedFolderID = folderID
+        appState.meetingsNavigationState = .browser
+    }
+
+    func showMeetingDocument(id: Int64) {
+        appState.selectedTab = .meetings
+        appState.selectedMeetingID = id
+        appState.meetingsNavigationState = .document(id)
+    }
+
     @objc func openPreferences() {
         openHistoryWindow(tab: .settings)
     }

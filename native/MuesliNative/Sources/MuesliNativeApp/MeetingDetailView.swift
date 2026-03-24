@@ -1,26 +1,40 @@
 import SwiftUI
 import MuesliCore
 
+private enum MeetingDocumentMode: Hashable {
+    case notes
+    case transcript
+}
+
 struct MeetingDetailView: View {
     let meeting: MeetingRecord?
     let controller: MuesliController
     let appState: AppState
+    let onBack: (() -> Void)?
     @State private var isSummarizing = false
     @State private var isEditingNotes = false
     @State private var editableTitle: String
     @State private var editableNotes: String
     @State private var pendingTemplateID: String
+    @State private var documentMode: MeetingDocumentMode
     @State private var titleSaveTask: DispatchWorkItem?
     @State private var notesSaveTask: DispatchWorkItem?
 
-    init(meeting: MeetingRecord?, controller: MuesliController, appState: AppState) {
+    init(
+        meeting: MeetingRecord?,
+        controller: MuesliController,
+        appState: AppState,
+        onBack: (() -> Void)? = nil
+    ) {
         self.meeting = meeting
         self.controller = controller
         self.appState = appState
+        self.onBack = onBack
         let initialTemplateID = meeting.map { controller.meetingTemplateSnapshot(for: $0).id } ?? controller.defaultMeetingTemplate().id
         _editableTitle = State(initialValue: meeting?.title ?? "")
         _editableNotes = State(initialValue: meeting.map { Self.notesContent(for: $0) } ?? "")
         _pendingTemplateID = State(initialValue: initialTemplateID)
+        _documentMode = State(initialValue: meeting.map(Self.defaultDocumentMode(for:)) ?? .notes)
     }
 
     var body: some View {
@@ -31,23 +45,7 @@ struct MeetingDetailView: View {
                 Divider()
                     .background(MuesliTheme.surfaceBorder)
 
-                if isRawTranscript(meeting) {
-                    transcriptCTA
-                }
-
-                if isEditingNotes {
-                    TextEditor(text: $editableNotes)
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundStyle(MuesliTheme.textPrimary)
-                        .scrollContentBackground(.hidden)
-                        .padding(MuesliTheme.spacing24)
-                        .background(MuesliTheme.backgroundBase)
-                        .onChange(of: editableNotes) { _, _ in
-                            debounceSaveNotes(meetingID: meeting.id)
-                        }
-                } else {
-                    MeetingNotesView(markdown: Self.notesContent(for: meeting))
-                }
+                content(for: meeting)
             }
             .background(MuesliTheme.backgroundBase)
             .onChange(of: meeting.id) { _, _ in
@@ -58,7 +56,7 @@ struct MeetingDetailView: View {
                 Text("No meeting selected")
                     .font(MuesliTheme.title3())
                     .foregroundStyle(MuesliTheme.textSecondary)
-                Text("Select a meeting from the list to view its notes")
+                Text("Choose a meeting from the Meetings browser to open it here.")
                     .font(MuesliTheme.callout())
                     .foregroundStyle(MuesliTheme.textTertiary)
             }
@@ -70,11 +68,24 @@ struct MeetingDetailView: View {
     @ViewBuilder
     private func header(_ meeting: MeetingRecord) -> some View {
         let appliedTemplate = controller.meetingTemplateSnapshot(for: meeting)
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: MuesliTheme.spacing4) {
+        VStack(alignment: .leading, spacing: MuesliTheme.spacing16) {
+            if let onBack {
+                Button(action: onBack) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Back to Meetings")
+                            .font(MuesliTheme.callout())
+                    }
+                    .foregroundStyle(MuesliTheme.textSecondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            HStack(alignment: .top, spacing: MuesliTheme.spacing24) {
+                VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
                     TextField("Meeting Title", text: $editableTitle)
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.system(size: 30, weight: .bold))
                         .foregroundStyle(MuesliTheme.textPrimary)
                         .textFieldStyle(.plain)
                         .onSubmit {
@@ -84,68 +95,147 @@ struct MeetingDetailView: View {
                             debounceSaveTitle(meetingID: meeting.id)
                         }
 
-                    Text(formatMeta(meeting))
-                        .font(MuesliTheme.callout())
-                        .foregroundStyle(MuesliTheme.textSecondary)
-
-                    templateChip(for: appliedTemplate)
-                }
-
-                Spacer()
-            }
-
-            HStack(spacing: MuesliTheme.spacing8) {
-                iconButton("doc.on.doc", label: "Copy notes") {
-                    controller.copyToClipboard(Self.notesContent(for: meeting))
-                }
-                iconButton("text.quote", label: "Copy transcript") {
-                    controller.copyToClipboard(meeting.rawTranscript)
-                }
-                templateMenu(for: meeting, appliedTemplate: appliedTemplate)
-                if isSummarizing {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Summarizing...")
-                            .font(.system(size: 11))
-                            .foregroundStyle(MuesliTheme.textTertiary)
+                    HStack(spacing: MuesliTheme.spacing8) {
+                        Text(formatMeta(meeting))
+                            .font(MuesliTheme.callout())
+                            .foregroundStyle(MuesliTheme.textSecondary)
+                        templateChip(for: appliedTemplate)
                     }
-                    .padding(.horizontal, MuesliTheme.spacing8)
-                } else if !isEditingNotes {
-                    iconButton("sparkles", label: hasPendingTemplateChange(for: meeting) ? "Apply Template" : "Re-summarize") {
-                        isSummarizing = true
-                        let completion = { [meeting] in
-                            isSummarizing = false
-                            if let updated = appState.meetingRows.first(where: { $0.id == meeting.id }) {
-                                syncLocalState(with: updated)
+                }
+
+                Spacer(minLength: MuesliTheme.spacing16)
+
+                VStack(alignment: .trailing, spacing: 10) {
+                    documentModePicker
+
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: MuesliTheme.spacing8) {
+                            templateMenu(for: meeting, appliedTemplate: appliedTemplate)
+                            summaryAction(for: meeting)
+                            editButton(for: meeting)
+                        }
+
+                        VStack(alignment: .trailing, spacing: MuesliTheme.spacing8) {
+                            HStack(spacing: MuesliTheme.spacing8) {
+                                templateMenu(for: meeting, appliedTemplate: appliedTemplate)
+                                summaryAction(for: meeting)
+                            }
+                            HStack(spacing: MuesliTheme.spacing8) {
+                                editButton(for: meeting)
                             }
                         }
-                        if hasPendingTemplateChange(for: meeting) {
-                            controller.applyMeetingTemplate(id: pendingTemplateID, to: meeting, completion: completion)
-                        } else {
-                            controller.resummarize(meeting: meeting, completion: completion)
-                        }
                     }
                 }
+            }
 
-                Spacer()
+            if isRawTranscript(meeting) && documentMode == .notes {
+                transcriptCTA
+            }
+        }
+        .frame(maxWidth: 980, alignment: .leading)
+        .padding(.horizontal, 40)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
 
-                iconButton(
-                    isEditingNotes ? "checkmark.circle" : "pencil",
-                    label: isEditingNotes ? "Done" : "Edit"
-                ) {
-                    if isEditingNotes {
-                        notesSaveTask?.cancel()
-                        controller.updateMeetingNotes(id: meeting.id, notes: editableNotes)
-                    } else {
-                        editableNotes = Self.notesContent(for: meeting)
+    @ViewBuilder
+    private func content(for meeting: MeetingRecord) -> some View {
+        if isEditingNotes {
+            VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+                contentToolbar(for: meeting)
+
+                TextEditor(text: $editableNotes)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(MuesliTheme.textPrimary)
+                    .scrollContentBackground(.hidden)
+                    .padding(MuesliTheme.spacing24)
+                    .background(MuesliTheme.backgroundBase)
+                    .frame(maxWidth: 980, maxHeight: .infinity, alignment: .topLeading)
+                    .onChange(of: editableNotes) { _, _ in
+                        debounceSaveNotes(meetingID: meeting.id)
                     }
-                    isEditingNotes.toggle()
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+                contentToolbar(for: meeting)
+
+                ZStack {
+                    MeetingNotesView(markdown: Self.notesContent(for: meeting))
+                        .opacity(documentMode == .notes ? 1 : 0)
+                        .allowsHitTesting(documentMode == .notes)
+                        .accessibilityHidden(documentMode != .notes)
+
+                    MeetingTranscriptView(transcript: meeting.rawTranscript)
+                        .opacity(documentMode == .transcript ? 1 : 0)
+                        .allowsHitTesting(documentMode == .transcript)
+                        .accessibilityHidden(documentMode != .transcript)
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private var documentModePicker: some View {
+        Picker("", selection: $documentMode) {
+            Text("Notes").tag(MeetingDocumentMode.notes)
+            Text("Transcript").tag(MeetingDocumentMode.transcript)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 220)
+        .disabled(isEditingNotes)
+    }
+
+    @ViewBuilder
+    private func summaryAction(for meeting: MeetingRecord) -> some View {
+        if isSummarizing {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Summarizing...")
+                    .font(.system(size: 11))
+                    .foregroundStyle(MuesliTheme.textTertiary)
+            }
+            .padding(.horizontal, MuesliTheme.spacing8)
+        } else {
+            iconButton("sparkles", label: primarySummaryActionLabel(for: meeting)) {
+                isSummarizing = true
+                let completion = { [meeting] in
+                    isSummarizing = false
+                    if let updated = appState.meetingRows.first(where: { $0.id == meeting.id }) {
+                        syncLocalState(with: updated)
+                    }
+                }
+                if hasPendingTemplateChange(for: meeting) {
+                    controller.applyMeetingTemplate(id: pendingTemplateID, to: meeting, completion: completion)
+                } else {
+                    controller.resummarize(meeting: meeting, completion: completion)
                 }
             }
         }
-        .padding(.horizontal, MuesliTheme.spacing24)
-        .padding(.vertical, MuesliTheme.spacing16)
+    }
+
+    @ViewBuilder
+    private func editButton(for meeting: MeetingRecord) -> some View {
+        iconButton(
+            isEditingNotes ? "checkmark.circle" : "pencil",
+            label: isEditingNotes ? "Done" : "Edit"
+        ) {
+            if isEditingNotes {
+                notesSaveTask?.cancel()
+                controller.updateMeetingNotes(id: meeting.id, notes: editableNotes)
+            } else {
+                documentMode = .notes
+                editableNotes = Self.notesContent(for: meeting)
+            }
+            isEditingNotes.toggle()
+        }
     }
 
     @ViewBuilder
@@ -219,6 +309,37 @@ struct MeetingDetailView: View {
         .fixedSize()
     }
 
+    @ViewBuilder
+    private func contentToolbar(for meeting: MeetingRecord) -> some View {
+        HStack {
+            Spacer()
+
+            Button(action: {
+                controller.copyToClipboard(activeCopyText(for: meeting))
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(copyButtonLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(MuesliTheme.textPrimary)
+                .padding(.horizontal, MuesliTheme.spacing12)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                        .fill(MuesliTheme.accent.opacity(0.18))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                        .strokeBorder(MuesliTheme.accent.opacity(0.35), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: 980, alignment: .leading)
+    }
+
     private func templateMenuItem(title: String, systemImage: String, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: isSelected ? "checkmark" : systemImage)
@@ -269,7 +390,7 @@ struct MeetingDetailView: View {
             if hasApiKey {
                 Image(systemName: "sparkles")
                     .foregroundStyle(MuesliTheme.accent)
-                Text("Click Re-summarize to generate AI meeting notes and title from this transcript")
+                Text("Use \(primarySummaryActionLabel) to turn this raw transcript into AI meeting notes and a cleaned-up title.")
                     .font(MuesliTheme.callout())
                     .foregroundStyle(MuesliTheme.textSecondary)
             } else {
@@ -290,8 +411,6 @@ struct MeetingDetailView: View {
         .padding(MuesliTheme.spacing12)
         .background(MuesliTheme.accent.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
-        .padding(.horizontal, MuesliTheme.spacing24)
-        .padding(.top, MuesliTheme.spacing12)
     }
 
     private var hasApiKey: Bool {
@@ -302,6 +421,28 @@ struct MeetingDetailView: View {
             return !config.openAIAPIKey.isEmpty || ProcessInfo.processInfo.environment["OPENAI_API_KEY"] != nil
         } else {
             return !config.openRouterAPIKey.isEmpty || ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] != nil
+        }
+    }
+
+    private var primarySummaryActionLabel: String {
+        guard let meeting else { return "Re-summarize" }
+        return primarySummaryActionLabel(for: meeting)
+    }
+
+    private var copyButtonLabel: String {
+        "Copy"
+    }
+
+    private func primarySummaryActionLabel(for meeting: MeetingRecord) -> String {
+        hasPendingTemplateChange(for: meeting) ? "Apply Template" : "Re-summarize"
+    }
+
+    private func activeCopyText(for meeting: MeetingRecord) -> String {
+        switch documentMode {
+        case .notes:
+            return isEditingNotes ? editableNotes : Self.notesContent(for: meeting)
+        case .transcript:
+            return meeting.rawTranscript
         }
     }
 
@@ -354,6 +495,10 @@ struct MeetingDetailView: View {
         return meeting.formattedNotes
     }
 
+    private static func defaultDocumentMode(for meeting: MeetingRecord) -> MeetingDocumentMode {
+        meeting.notesState == .structuredNotes ? .notes : .transcript
+    }
+
     private func debounceSaveTitle(meetingID: Int64) {
         titleSaveTask?.cancel()
         let title = editableTitle
@@ -376,6 +521,7 @@ struct MeetingDetailView: View {
         editableTitle = meeting?.title ?? ""
         editableNotes = meeting.map { Self.notesContent(for: $0) } ?? ""
         pendingTemplateID = meeting.map { controller.meetingTemplateSnapshot(for: $0).id } ?? controller.defaultMeetingTemplate().id
+        documentMode = meeting.map(Self.defaultDocumentMode(for:)) ?? .notes
     }
 
     private func formatMeta(_ meeting: MeetingRecord) -> String {
@@ -403,5 +549,21 @@ struct MeetingDetailView: View {
             return s == 0 ? "\(m)m" : "\(m)m \(s)s"
         }
         return "\(rounded)s"
+    }
+}
+
+private struct MeetingTranscriptView: View {
+    let transcript: String
+
+    var body: some View {
+        ScrollView {
+            Text(transcript)
+                .font(.system(size: 13, design: .monospaced))
+                .foregroundStyle(MuesliTheme.textPrimary)
+                .frame(maxWidth: 860, alignment: .leading)
+                .textSelection(.enabled)
+                .padding(MuesliTheme.spacing24)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
     }
 }

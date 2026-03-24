@@ -12,6 +12,11 @@ enum DashboardTab: String, CaseIterable {
     case about
 }
 
+enum MeetingsNavigationState: Equatable {
+    case browser
+    case document(Int64)
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -21,6 +26,7 @@ final class AppState {
     var selectedMeetingID: Int64?
     var folders: [MeetingFolder] = []
     var selectedFolderID: Int64?  // nil = "All Meetings"
+    var meetingsNavigationState: MeetingsNavigationState = .browser
     var dictationStats: DictationStats = DictationStats(
         totalWords: 0, totalSessions: 0, averageWordsPerSession: 0,
         averageWPM: 0, currentStreakDays: 0, longestStreakDays: 0
@@ -47,7 +53,7 @@ final class AppState {
 
     // Computed
     var selectedMeeting: MeetingRecord? {
-        guard let id = selectedMeetingID else { return meetingRows.first }
+        guard let id = selectedMeetingID else { return nil }
         return meetingRows.first(where: { $0.id == id })
     }
 }

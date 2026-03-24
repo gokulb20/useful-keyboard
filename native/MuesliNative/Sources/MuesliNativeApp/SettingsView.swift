@@ -385,7 +385,7 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var customTemplatesBlock: some View {
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Custom templates")
@@ -408,10 +408,22 @@ struct SettingsView: View {
             }
 
             if controller.customMeetingTemplates().isEmpty {
-                Text("No custom templates yet.")
-                    .font(MuesliTheme.callout())
-                    .foregroundStyle(MuesliTheme.textTertiary)
-                    .padding(.vertical, 4)
+                HStack(spacing: MuesliTheme.spacing8) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 11))
+                        .foregroundStyle(MuesliTheme.textTertiary)
+                    Text("No custom templates yet.")
+                        .font(MuesliTheme.callout())
+                        .foregroundStyle(MuesliTheme.textTertiary)
+                }
+                .padding(.horizontal, MuesliTheme.spacing12)
+                .padding(.vertical, 10)
+                .background(MuesliTheme.backgroundBase)
+                .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+                .overlay(
+                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                        .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+                )
             } else {
                 VStack(spacing: MuesliTheme.spacing8) {
                     ForEach(controller.customMeetingTemplates()) { template in
@@ -424,7 +436,6 @@ struct SettingsView: View {
                 customTemplateEditor
             }
         }
-        .padding(.top, MuesliTheme.spacing4)
     }
 
     @ViewBuilder
