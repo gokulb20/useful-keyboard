@@ -339,18 +339,22 @@ final class MuesliController: NSObject {
         }
     }
 
-    func createCustomMeetingTemplate(name: String, prompt: String) {
+    func createCustomMeetingTemplate(name: String, prompt: String, icon: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty else { return }
         updateConfig {
             $0.customMeetingTemplates.append(
-                CustomMeetingTemplate(name: trimmedName, prompt: trimmedPrompt)
+                CustomMeetingTemplate(
+                    name: trimmedName,
+                    prompt: trimmedPrompt,
+                    icon: MeetingTemplates.normalizedCustomIcon(named: icon)
+                )
             )
         }
     }
 
-    func updateCustomMeetingTemplate(id: String, name: String, prompt: String) {
+    func updateCustomMeetingTemplate(id: String, name: String, prompt: String, icon: String) {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty else { return }
@@ -358,6 +362,7 @@ final class MuesliController: NSObject {
             guard let index = $0.customMeetingTemplates.firstIndex(where: { $0.id == id }) else { return }
             $0.customMeetingTemplates[index].name = trimmedName
             $0.customMeetingTemplates[index].prompt = trimmedPrompt
+            $0.customMeetingTemplates[index].icon = MeetingTemplates.normalizedCustomIcon(named: icon)
         }
     }
 
@@ -470,6 +475,12 @@ final class MuesliController: NSObject {
         appState.selectedTab = .meetings
         appState.selectedMeetingID = id
         appState.meetingsNavigationState = .document(id)
+    }
+
+    func showMeetingTemplatesManager() {
+        appState.selectedTab = .meetings
+        appState.meetingsNavigationState = .browser
+        appState.isMeetingTemplatesManagerPresented = true
     }
 
     @objc func openPreferences() {

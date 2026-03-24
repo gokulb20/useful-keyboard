@@ -271,9 +271,10 @@ struct MeetingDetailView: View {
                         Button {
                             pendingTemplateID = template.id
                         } label: {
+                            let resolved = MeetingTemplates.customDefinition(from: template)
                             templateMenuItem(
                                 title: template.name,
-                                systemImage: "square.and.pencil",
+                                systemImage: resolved.icon,
                                 isSelected: pendingTemplateID == template.id
                             )
                         }
@@ -284,7 +285,7 @@ struct MeetingDetailView: View {
             Divider()
 
             Button("Manage Templates…") {
-                controller.openHistoryWindow(tab: .settings)
+                controller.showMeetingTemplatesManager()
             }
         } label: {
             HStack(spacing: 4) {
@@ -484,7 +485,10 @@ struct MeetingDetailView: View {
                 customTemplates: appState.config.customMeetingTemplates
             ).icon
         case .custom:
-            return "square.and.pencil"
+            return MeetingTemplates.resolveDefinition(
+                id: snapshot.id,
+                customTemplates: appState.config.customMeetingTemplates
+            ).icon
         }
     }
 

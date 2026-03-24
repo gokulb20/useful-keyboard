@@ -83,11 +83,120 @@ struct MeetingsNavigationTests {
         #expect(controller.appState.meetingsNavigationState == .browser)
     }
 
+    @Test("showMeetingTemplatesManager routes to meetings home and presents manager")
+    func showMeetingTemplatesManagerPresentsManager() {
+        let controller = makeController()
+
+        controller.appState.selectedTab = .settings
+        controller.appState.meetingsNavigationState = .document(404)
+        controller.appState.isMeetingTemplatesManagerPresented = false
+
+        controller.showMeetingTemplatesManager()
+
+        #expect(controller.appState.selectedTab == .meetings)
+        #expect(controller.appState.meetingsNavigationState == .browser)
+        #expect(controller.appState.isMeetingTemplatesManagerPresented == true)
+    }
+
     private func makeMeeting(id: Int64, title: String) -> MeetingRecord {
         MeetingRecord(
             id: id,
             title: title,
             startTime: "2026-03-24 10:00",
+            durationSeconds: 1800,
+            rawTranscript: "Transcript",
+            formattedNotes: "## Summary",
+            wordCount: 42,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            selectedTemplateID: MeetingTemplates.autoID,
+            selectedTemplateName: "Auto",
+            selectedTemplateKind: .auto,
+            selectedTemplatePrompt: ""
+        )
+    }
+}
+
+@Suite("Meeting browser logic")
+struct MeetingBrowserLogicTests {
+
+    @Test("available filters expand with older meeting history")
+    func availableFiltersExpandWithHistory() {
+        let now = Date(timeIntervalSince1970: 1_710_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let meetings = [
+            makeMeeting(id: 1, daysAgo: 40, title: "Oldest"),
+            makeMeeting(id: 2, daysAgo: 1, title: "Recent")
+        ]
+
+        let filters = MeetingBrowserLogic.availableFilters(for: meetings, now: now, calendar: calendar)
+
+        #expect(filters == [.all, .last2Days, .lastWeek, .last2Weeks, .lastMonth, .last3Months])
+    }
+
+    @Test("filtering excludes invalid dates and sorts newest first")
+    func filteringNewestFirst() {
+        let now = Date(timeIntervalSince1970: 1_710_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let meetings = [
+            makeMeeting(id: 1, daysAgo: 10, title: "Too old"),
+            makeMeeting(id: 2, daysAgo: 2, title: "Recent A"),
+            makeMeeting(id: 3, daysAgo: 1, title: "Recent B"),
+            makeMeeting(id: 4, rawDate: "not-a-date", title: "Invalid")
+        ]
+
+        let filtered = MeetingBrowserLogic.filteredMeetings(
+            from: meetings,
+            filter: .lastWeek,
+            sort: .newestFirst,
+            now: now,
+            calendar: calendar
+        )
+
+        #expect(filtered.map(\.id) == [3, 2])
+    }
+
+    @Test("all filter keeps invalid dates and oldest-first pushes them to the front")
+    func allFilterOldestFirst() {
+        let now = Date(timeIntervalSince1970: 1_710_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let meetings = [
+            makeMeeting(id: 10, daysAgo: 2, title: "Recent"),
+            makeMeeting(id: 11, daysAgo: 8, title: "Older"),
+            makeMeeting(id: 12, rawDate: "invalid-date", title: "Invalid")
+        ]
+
+        let filtered = MeetingBrowserLogic.filteredMeetings(
+            from: meetings,
+            filter: .all,
+            sort: .oldestFirst,
+            now: now,
+            calendar: calendar
+        )
+
+        #expect(filtered.map(\.id) == [12, 11, 10])
+    }
+
+    private static func isoDate(daysAgo: Int, now: Date, calendar: Calendar) -> String {
+        let date = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: date)
+    }
+
+    private func makeMeeting(id: Int64, daysAgo: Int, title: String) -> MeetingRecord {
+        let now = Date(timeIntervalSince1970: 1_710_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        return makeMeeting(id: id, rawDate: Self.isoDate(daysAgo: daysAgo, now: now, calendar: calendar), title: title)
+    }
+
+    private func makeMeeting(id: Int64, rawDate: String, title: String) -> MeetingRecord {
+        MeetingRecord(
+            id: id,
+            title: title,
+            startTime: rawDate,
             durationSeconds: 1800,
             rawTranscript: "Transcript",
             formattedNotes: "## Summary",

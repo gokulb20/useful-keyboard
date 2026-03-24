@@ -1,15 +1,154 @@
 import SwiftUI
 import MuesliCore
 
+enum MeetingBrowserFilter: Hashable {
+    case all, last2Days, lastWeek, last2Weeks, lastMonth, last3Months
+
+    var label: String {
+        switch self {
+        case .all: return "All time"
+        case .last2Days: return "Last 2 days"
+        case .lastWeek: return "Last week"
+        case .last2Weeks: return "Last 2 weeks"
+        case .lastMonth: return "Last month"
+        case .last3Months: return "Last 3 months"
+        }
+    }
+}
+
+enum MeetingBrowserSort: Hashable {
+    case newestFirst
+    case oldestFirst
+
+    var label: String {
+        switch self {
+        case .newestFirst: return "Newest first"
+        case .oldestFirst: return "Oldest first"
+        }
+    }
+}
+
+enum MeetingBrowserLogic {
+    static func availableFilters(
+        for meetings: [MeetingRecord],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [MeetingBrowserFilter] {
+        var filters: [MeetingBrowserFilter] = [.all]
+        let oldestDate = meetings.compactMap { parseDate($0.startTime) }.min()
+
+        guard let oldest = oldestDate else { return filters }
+        let daysSinceOldest = calendar.dateComponents([.day], from: oldest, to: now).day ?? 0
+
+        if daysSinceOldest >= 1 { filters.append(.last2Days) }
+        if daysSinceOldest >= 3 { filters.append(.lastWeek) }
+        if daysSinceOldest >= 8 { filters.append(.last2Weeks) }
+        if daysSinceOldest >= 15 { filters.append(.lastMonth) }
+        if daysSinceOldest >= 31 { filters.append(.last3Months) }
+
+        return filters
+    }
+
+    static func filteredMeetings(
+        from meetings: [MeetingRecord],
+        filter: MeetingBrowserFilter,
+        sort: MeetingBrowserSort,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> [MeetingRecord] {
+        let threshold = threshold(for: filter, now: now, calendar: calendar)
+        let filtered = meetings.filter { isAfterThreshold($0, threshold: threshold) }
+
+        return filtered.sorted { lhs, rhs in
+            let lhsDate = parseDate(lhs.startTime) ?? .distantPast
+            let rhsDate = parseDate(rhs.startTime) ?? .distantPast
+            switch sort {
+            case .newestFirst:
+                return lhsDate > rhsDate
+            case .oldestFirst:
+                return lhsDate < rhsDate
+            }
+        }
+    }
+
+    private static func threshold(
+        for filter: MeetingBrowserFilter,
+        now: Date,
+        calendar: Calendar
+    ) -> Date? {
+        switch filter {
+        case .all:
+            return nil
+        case .last2Days:
+            return calendar.date(byAdding: .day, value: -2, to: now)
+        case .lastWeek:
+            return calendar.date(byAdding: .day, value: -7, to: now)
+        case .last2Weeks:
+            return calendar.date(byAdding: .day, value: -14, to: now)
+        case .lastMonth:
+            return calendar.date(byAdding: .month, value: -1, to: now)
+        case .last3Months:
+            return calendar.date(byAdding: .month, value: -3, to: now)
+        }
+    }
+
+    private static func isAfterThreshold(_ meeting: MeetingRecord, threshold: Date?) -> Bool {
+        guard let threshold else { return true }
+        guard let date = parseDate(meeting.startTime) else { return false }
+        return date >= threshold
+    }
+
+    static func parseDate(_ raw: String) -> Date? {
+        isoParsers.lazy.compactMap { $0.date(from: raw) }.first
+            ?? localParsers.lazy.compactMap { $0.date(from: raw) }.first
+    }
+
+    private static let isoParsers: [ISO8601DateFormatter] = {
+        let iso1 = ISO8601DateFormatter()
+        iso1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso2 = ISO8601DateFormatter()
+        iso2.formatOptions = [.withInternetDateTime]
+        return [iso1, iso2]
+    }()
+
+    private static let localParsers: [DateFormatter] = {
+        let local1: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = .current
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS"
+            return f
+        }()
+        let local2: DateFormatter = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = .current
+            f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            return f
+        }()
+        return [local1, local2]
+    }()
+}
+
 struct MeetingsView: View {
     let appState: AppState
     let controller: MuesliController
+    @State private var selectedFilter: MeetingBrowserFilter = .all
+    @State private var selectedSort: MeetingBrowserSort = .newestFirst
 
-    private var filteredMeetings: [MeetingRecord] {
+    private var scopedMeetings: [MeetingRecord] {
         guard let folderID = appState.selectedFolderID else {
             return appState.meetingRows
         }
         return appState.meetingRows.filter { $0.folderID == folderID }
+    }
+
+    private var filteredMeetings: [MeetingRecord] {
+        MeetingBrowserLogic.filteredMeetings(
+            from: scopedMeetings,
+            filter: selectedFilter,
+            sort: selectedSort
+        )
     }
 
     private var currentFolderName: String {
@@ -38,6 +177,18 @@ struct MeetingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(MuesliTheme.backgroundBase)
+        .sheet(
+            isPresented: Binding(
+                get: { appState.isMeetingTemplatesManagerPresented },
+                set: { appState.isMeetingTemplatesManagerPresented = $0 }
+            )
+        ) {
+            MeetingTemplatesManagerView(
+                appState: appState,
+                controller: controller,
+                onClose: { appState.isMeetingTemplatesManagerPresented = false }
+            )
+        }
     }
 
     @ViewBuilder
@@ -73,25 +224,127 @@ struct MeetingsView: View {
 
     @ViewBuilder
     private var browserHeader: some View {
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
-            Text(currentFolderName)
-                .font(.system(size: 30, weight: .bold))
-                .foregroundStyle(MuesliTheme.textPrimary)
+        HStack(alignment: .top, spacing: MuesliTheme.spacing16) {
+            VStack(alignment: .leading, spacing: MuesliTheme.spacing8) {
+                Text(currentFolderName)
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(MuesliTheme.textPrimary)
+
+                HStack(spacing: MuesliTheme.spacing8) {
+                    Text("\(filteredMeetings.count) meeting\(filteredMeetings.count == 1 ? "" : "s")")
+                        .font(MuesliTheme.callout())
+                        .foregroundStyle(MuesliTheme.textSecondary)
+
+                    Text("\u{2022}")
+                        .font(MuesliTheme.callout())
+                        .foregroundStyle(MuesliTheme.textTertiary)
+
+                    Text("Open a meeting to review notes, transcript, and template-driven summaries")
+                        .font(MuesliTheme.callout())
+                        .foregroundStyle(MuesliTheme.textTertiary)
+                }
+            }
+
+            Spacer()
 
             HStack(spacing: MuesliTheme.spacing8) {
-                Text("\(filteredMeetings.count) meeting\(filteredMeetings.count == 1 ? "" : "s")")
-                    .font(MuesliTheme.callout())
-                    .foregroundStyle(MuesliTheme.textSecondary)
+                sortButton
+                dateFilterButton
 
-                Text("\u{2022}")
-                    .font(MuesliTheme.callout())
-                    .foregroundStyle(MuesliTheme.textTertiary)
-
-                Text("Open a meeting to review notes, transcript, and template-driven summaries")
-                    .font(MuesliTheme.callout())
-                    .foregroundStyle(MuesliTheme.textTertiary)
+                Button {
+                    controller.showMeetingTemplatesManager()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 11, weight: .medium))
+                        Text("Manage Templates")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(MuesliTheme.textPrimary)
+                    .padding(.horizontal, MuesliTheme.spacing12)
+                    .padding(.vertical, 8)
+                    .background(MuesliTheme.surfacePrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
+                            .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
+    }
+
+    @ViewBuilder
+    private var sortButton: some View {
+        Menu {
+            ForEach([MeetingBrowserSort.newestFirst, .oldestFirst], id: \.self) { option in
+                Button {
+                    selectedSort = option
+                } label: {
+                    HStack {
+                        Text(option.label)
+                        if selectedSort == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 11))
+                if selectedSort != .newestFirst {
+                    Text(selectedSort.label)
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundStyle(selectedSort != .newestFirst ? MuesliTheme.accent : MuesliTheme.textTertiary)
+            .padding(.horizontal, selectedSort != .newestFirst ? 8 : 0)
+            .padding(.vertical, 3)
+            .background(selectedSort != .newestFirst ? MuesliTheme.accent.opacity(0.12) : Color.clear)
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private var dateFilterButton: some View {
+        Menu {
+            ForEach(availableFilters, id: \.self) { filter in
+                Button {
+                    selectedFilter = filter
+                } label: {
+                    HStack {
+                        Text(filter.label)
+                        if selectedFilter == filter {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 11))
+                if selectedFilter != .all {
+                    Text(selectedFilter.label)
+                        .font(.system(size: 11))
+                }
+            }
+            .foregroundStyle(selectedFilter != .all ? MuesliTheme.accent : MuesliTheme.textTertiary)
+            .padding(.horizontal, selectedFilter != .all ? 8 : 0)
+            .padding(.vertical, 3)
+            .background(selectedFilter != .all ? MuesliTheme.accent.opacity(0.12) : Color.clear)
+            .clipShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var availableFilters: [MeetingBrowserFilter] {
+        MeetingBrowserLogic.availableFilters(for: scopedMeetings)
     }
 
     @ViewBuilder

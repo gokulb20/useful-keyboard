@@ -138,7 +138,12 @@ struct AppConfigTests {
         config.hasCompletedOnboarding = true
         config.defaultMeetingTemplateID = "weekly-team-meeting"
         config.customMeetingTemplates = [
-            CustomMeetingTemplate(id: "tmpl_123", name: "Customer Follow-Up", prompt: "## Summary")
+            CustomMeetingTemplate(
+                id: "tmpl_123",
+                name: "Customer Follow-Up",
+                prompt: "## Summary",
+                icon: "dollarsign.circle"
+            )
         ]
 
         let data = try JSONEncoder().encode(config)
@@ -150,6 +155,7 @@ struct AppConfigTests {
         #expect(decoded.defaultMeetingTemplateID == "weekly-team-meeting")
         #expect(decoded.customMeetingTemplates.count == 1)
         #expect(decoded.customMeetingTemplates.first?.name == "Customer Follow-Up")
+        #expect(decoded.customMeetingTemplates.first?.icon == "dollarsign.circle")
     }
 
     @Test("JSON coding keys use snake_case")
@@ -177,6 +183,39 @@ struct AppConfigTests {
         #expect(config.hasCompletedOnboarding == false)
         #expect(config.defaultMeetingTemplateID == MeetingTemplates.autoID)
         #expect(config.customMeetingTemplates.isEmpty)
+    }
+
+    @Test("custom templates decode missing icon with fallback")
+    func customTemplateMissingIconUsesFallback() throws {
+        let json = """
+        {
+          "custom_meeting_templates": [
+            {
+              "id": "tmpl_123",
+              "name": "Customer Follow-Up",
+              "prompt": "## Summary"
+            }
+          ]
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let config = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(config.customMeetingTemplates.count == 1)
+        #expect(config.customMeetingTemplates.first?.icon == MeetingTemplates.customIconFallback)
+    }
+
+    @Test("custom templates normalize invalid icons")
+    func customTemplateInvalidIconUsesFallback() {
+        let template = CustomMeetingTemplate(
+            id: "tmpl_invalid",
+            name: "Test",
+            prompt: "Prompt",
+            icon: "invalid.icon"
+        )
+
+        #expect(template.icon == MeetingTemplates.customIconFallback)
+        #expect(MeetingTemplates.customDefinition(from: template).icon == MeetingTemplates.customIconFallback)
     }
 }
 
