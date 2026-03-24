@@ -259,6 +259,7 @@ struct MeetingsView: View {
                             .font(.system(size: 11, weight: .medium))
                         Text("Manage Templates")
                             .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
                     }
                     .foregroundStyle(MuesliTheme.textPrimary)
                     .padding(.horizontal, MuesliTheme.spacing12)
@@ -271,7 +272,10 @@ struct MeetingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
+                .layoutPriority(1)
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -294,15 +298,13 @@ struct MeetingsView: View {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.up.arrow.down")
                     .font(.system(size: 11))
-                if selectedSort != .newestFirst {
-                    Text(selectedSort.label)
-                        .font(.system(size: 11))
-                }
+                Text(selectedSort.label)
+                    .font(.system(size: 11))
             }
-            .foregroundStyle(selectedSort != .newestFirst ? MuesliTheme.accent : MuesliTheme.textTertiary)
-            .padding(.horizontal, selectedSort != .newestFirst ? 8 : 0)
+            .foregroundStyle(selectedSort != .newestFirst ? MuesliTheme.accent : MuesliTheme.textSecondary)
+            .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(selectedSort != .newestFirst ? MuesliTheme.accent.opacity(0.12) : Color.clear)
+            .background(selectedSort != .newestFirst ? MuesliTheme.accent.opacity(0.12) : MuesliTheme.surfacePrimary.opacity(0.5))
             .clipShape(Capsule())
         }
         .menuStyle(.borderlessButton)
