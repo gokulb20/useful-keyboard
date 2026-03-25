@@ -597,7 +597,8 @@ final class MuesliController: NSObject {
                 transcript: meeting.rawTranscript,
                 meetingTitle: plan.promptTitle,
                 config: self.config,
-                template: templateSnapshot
+                template: templateSnapshot,
+                existingNotes: self.notesContextForResummary(meeting)
             )
 
             do {
@@ -625,6 +626,12 @@ final class MuesliController: NSObject {
     }
 
     // MARK: - Meeting Editing
+
+    private func notesContextForResummary(_ meeting: MeetingRecord) -> String? {
+        guard meeting.notesState == .structuredNotes else { return nil }
+        let trimmed = meeting.formattedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : meeting.formattedNotes
+    }
 
     func updateMeetingTitle(id: Int64, title: String) {
         try? dictationStore.updateMeetingTitle(id: id, title: title)
