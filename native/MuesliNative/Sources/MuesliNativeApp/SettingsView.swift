@@ -2,11 +2,44 @@ import SwiftUI
 import MuesliCore
 
 struct SettingsView: View {
+    private enum PendingDataDestruction {
+        case dictations
+        case meetings
+
+        var title: String {
+            switch self {
+            case .dictations:
+                return "Clear dictation history?"
+            case .meetings:
+                return "Clear meeting history?"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .dictations:
+                return "This will permanently remove all saved dictations. This cannot be undone."
+            case .meetings:
+                return "This will permanently remove all saved meetings, notes, and transcripts. This cannot be undone."
+            }
+        }
+
+        var confirmLabel: String {
+            switch self {
+            case .dictations:
+                return "Clear Dictations"
+            case .meetings:
+                return "Clear Meetings"
+            }
+        }
+    }
+
     let appState: AppState
     let controller: MuesliController
 
     @State private var chatGPTSignInError: String?
     @State private var isSigningInChatGPT = false
+    @State private var pendingDataDestruction: PendingDataDestruction?
 
     // Uniform width for all right-side controls
     private let controlWidth: CGFloat = 220
@@ -180,6 +213,18 @@ struct SettingsView: View {
                     }
 
                     Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Default template") {
+                        meetingTemplateMenu(selectionID: appState.config.defaultMeetingTemplateID) { id in
+                            controller.updateDefaultMeetingTemplate(id: id)
+                        }
+                    }
+                    Divider().background(MuesliTheme.surfaceBorder)
+                    settingsRow("Templates") {
+                        actionButton("Manage Templates…") {
+                            controller.showMeetingTemplatesManager()
+                        }
+                    }
+                    Divider().background(MuesliTheme.surfaceBorder)
                     settingsRow("Auto-record calendar meetings") {
                         settingsSwitch(isOn: appState.config.autoRecordMeetings) { newValue in
                             controller.updateConfig { $0.autoRecordMeetings = newValue }
@@ -196,10 +241,10 @@ struct SettingsView: View {
                 settingsSection("Data") {
                     HStack(spacing: MuesliTheme.spacing12) {
                         actionButton("Clear dictation history", role: .destructive) {
-                            controller.clearDictationHistory()
+                            pendingDataDestruction = .dictations
                         }
                         actionButton("Clear meeting history", role: .destructive) {
-                            controller.clearMeetingHistory()
+                            pendingDataDestruction = .meetings
                         }
                     }
                 }
@@ -207,6 +252,30 @@ struct SettingsView: View {
             .padding(MuesliTheme.spacing32)
         }
         .background(MuesliTheme.backgroundBase)
+        .alert(
+            pendingDataDestruction?.title ?? "Confirm Destructive Action",
+            isPresented: Binding(
+                get: { pendingDataDestruction != nil },
+                set: { if !$0 { pendingDataDestruction = nil } }
+            )
+        ) {
+            Button("Cancel", role: .cancel) {
+                pendingDataDestruction = nil
+            }
+            Button(pendingDataDestruction?.confirmLabel ?? "Delete", role: .destructive) {
+                switch pendingDataDestruction {
+                case .dictations:
+                    controller.clearDictationHistory()
+                case .meetings:
+                    controller.clearMeetingHistory()
+                case nil:
+                    break
+                }
+                pendingDataDestruction = nil
+            }
+        } message: {
+            Text(pendingDataDestruction?.message ?? "")
+        }
     }
 
     // MARK: - Layout Primitives
@@ -260,6 +329,37 @@ struct SettingsView: View {
     private func settingsMenu(selection: String, options: [String], onChange: @escaping (String) -> Void) -> some View {
         Picker("", selection: Binding(get: { selection }, set: { onChange($0) })) {
             ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .frame(width: controlWidth)
+    }
+
+    @ViewBuilder
+    private func meetingTemplateMenu(selectionID: String, onChange: @escaping (String) -> Void) -> some View {
+        Picker(
+            "",
+            selection: Binding(
+                get: { selectionID },
+                set: { onChange($0) }
+            )
+        ) {
+            Text(MeetingTemplates.auto.title)
+                .tag(MeetingTemplates.autoID)
+            Section("Built-in Templates") {
+                ForEach(controller.builtInMeetingTemplates()) { template in
+                    Text(template.title)
+                        .tag(template.id)
+                }
+            }
+
+            if !controller.customMeetingTemplates().isEmpty {
+                Section("Custom Templates") {
+                    ForEach(controller.customMeetingTemplates()) { template in
+                        Text(template.name)
+                            .tag(template.id)
+                    }
+                }
+            }
         }
         .pickerStyle(.menu)
         .frame(width: controlWidth)

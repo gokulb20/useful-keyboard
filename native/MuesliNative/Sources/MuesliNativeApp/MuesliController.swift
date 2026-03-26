@@ -5,6 +5,48 @@ import Sparkle
 import TelemetryDeck
 import MuesliCore
 
+struct MeetingResummarizationPlan: Equatable {
+    let promptTitle: String
+    let persistedTitle: String
+}
+
+enum MeetingResummarizationPolicy {
+    static func plan(for meeting: MeetingRecord) -> MeetingResummarizationPlan {
+        let trimmed = meeting.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let promptTitle = trimmed.isEmpty ? "Meeting" : trimmed
+        return MeetingResummarizationPlan(
+            promptTitle: promptTitle,
+            persistedTitle: meeting.title
+        )
+    }
+}
+
+enum MeetingSummaryPersistenceError: Error, LocalizedError {
+    case failedToSaveSummary(underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .failedToSaveSummary(let underlying):
+            let detail = underlying.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+            if detail.isEmpty {
+                return "The updated meeting notes could not be saved."
+            }
+            return "The updated meeting notes could not be saved. \(detail)"
+        }
+    }
+}
+
+enum MeetingTemplateSelectionError: Error, LocalizedError {
+    case templateNoLongerExists
+
+    var errorDescription: String? {
+        switch self {
+        case .templateNoLongerExists:
+            return "That template no longer exists. Choose another template and try again."
+        }
+    }
+}
+
 @MainActor
 final class MuesliController: NSObject {
     private let runtime: RuntimePaths
@@ -207,6 +249,13 @@ final class MuesliController: NSObject {
         (try? dictationStore.recentMeetings(limit: 10)) ?? []
     }
 
+    func meeting(id: Int64) -> MeetingRecord? {
+        if let row = appState.meetingRows.first(where: { $0.id == id }) {
+            return row
+        }
+        return try? dictationStore.meeting(id: id)
+    }
+
     func dictationStats() -> DictationStats {
         (try? dictationStore.dictationStats()) ?? DictationStats(
             totalWords: 0,
@@ -256,6 +305,12 @@ final class MuesliController: NSObject {
         appState.dictationRows = rows
         appState.hasMoreDictations = rows.count >= appState.dictationPageSize
         appState.meetingRows = (try? dictationStore.recentMeetings(limit: 50)) ?? []
+        if let selectedMeetingID = appState.selectedMeetingID {
+            appState.selectedMeetingRecord = appState.meetingRows.first(where: { $0.id == selectedMeetingID })
+                ?? meeting(id: selectedMeetingID)
+        } else {
+            appState.selectedMeetingRecord = nil
+        }
         appState.folders = (try? dictationStore.listFolders()) ?? []
         appState.dictationStats = dictationStats()
         appState.meetingStats = meetingStats()
@@ -282,6 +337,10 @@ final class MuesliController: NSObject {
         } else {
             indicator.closeIfIdle()
         }
+        appState.selectedBackend = selectedBackend
+        appState.selectedMeetingSummaryBackend = selectedMeetingSummaryBackend
+        appState.config = config
+        appState.isChatGPTAuthenticated = chatGPTAuth.isAuthenticated
     }
 
     func selectBackend(_ option: BackendOption) {
@@ -302,6 +361,72 @@ final class MuesliController: NSObject {
     func selectMeetingSummaryBackend(_ option: MeetingSummaryBackendOption) {
         updateConfig {
             $0.meetingSummaryBackend = option.backend
+        }
+    }
+
+    func availableMeetingTemplates() -> [MeetingTemplateDefinition] {
+        MeetingTemplates.allDefinitions(customTemplates: config.customMeetingTemplates)
+    }
+
+    func builtInMeetingTemplates() -> [MeetingTemplateDefinition] {
+        MeetingTemplates.builtIns
+    }
+
+    func customMeetingTemplates() -> [CustomMeetingTemplate] {
+        config.customMeetingTemplates
+    }
+
+    func defaultMeetingTemplate() -> MeetingTemplateSnapshot {
+        MeetingTemplates.resolveSnapshot(
+            id: config.defaultMeetingTemplateID,
+            customTemplates: config.customMeetingTemplates
+        )
+    }
+
+    func meetingTemplateSnapshot(for meeting: MeetingRecord) -> MeetingTemplateSnapshot {
+        MeetingTemplates.snapshot(for: meeting, customTemplates: config.customMeetingTemplates)
+    }
+
+    func updateDefaultMeetingTemplate(id: String) {
+        let resolved = MeetingTemplates.resolveSnapshot(id: id, customTemplates: config.customMeetingTemplates)
+        updateConfig {
+            $0.defaultMeetingTemplateID = resolved.id
+        }
+    }
+
+    func createCustomMeetingTemplate(name: String, prompt: String, icon: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty else { return }
+        updateConfig {
+            $0.customMeetingTemplates.append(
+                CustomMeetingTemplate(
+                    name: trimmedName,
+                    prompt: trimmedPrompt,
+                    icon: MeetingTemplates.normalizedCustomIcon(named: icon)
+                )
+            )
+        }
+    }
+
+    func updateCustomMeetingTemplate(id: String, name: String, prompt: String, icon: String) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, !trimmedPrompt.isEmpty else { return }
+        updateConfig {
+            guard let index = $0.customMeetingTemplates.firstIndex(where: { $0.id == id }) else { return }
+            $0.customMeetingTemplates[index].name = trimmedName
+            $0.customMeetingTemplates[index].prompt = trimmedPrompt
+            $0.customMeetingTemplates[index].icon = MeetingTemplates.normalizedCustomIcon(named: icon)
+        }
+    }
+
+    func deleteCustomMeetingTemplate(id: String) {
+        updateConfig {
+            $0.customMeetingTemplates.removeAll { $0.id == id }
+            if $0.defaultMeetingTemplateID == id {
+                $0.defaultMeetingTemplateID = MeetingTemplates.autoID
+            }
         }
     }
 
@@ -395,6 +520,24 @@ final class MuesliController: NSObject {
         }
     }
 
+    func showMeetingsHome(folderID: Int64? = nil) {
+        appState.selectedTab = .meetings
+        appState.selectedFolderID = folderID
+        appState.meetingsNavigationState = .browser
+    }
+
+    func showMeetingDocument(id: Int64) {
+        appState.selectedTab = .meetings
+        appState.selectedMeetingID = id
+        appState.selectedMeetingRecord = meeting(id: id)
+        appState.meetingsNavigationState = .document(id)
+    }
+
+    func showMeetingTemplatesManager() {
+        appState.selectedTab = .meetings
+        appState.isMeetingTemplatesManagerPresented = true
+    }
+
     @objc func openPreferences() {
         openHistoryWindow(tab: .settings)
     }
@@ -439,32 +582,69 @@ final class MuesliController: NSObject {
         selectMeetingSummaryBackend(option)
     }
 
-    func resummarize(meeting: MeetingRecord, completion: @escaping () -> Void) {
+    func resummarize(meeting: MeetingRecord, completion: @escaping (Result<Void, Error>) -> Void) {
+        let templateSnapshot = meetingTemplateSnapshot(for: meeting)
+        resummarize(meeting: meeting, using: templateSnapshot, completion: completion)
+    }
+
+    func applyMeetingTemplate(id: String, to meeting: MeetingRecord, completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let templateSnapshot = MeetingTemplates.resolveExactSnapshot(
+            id: id,
+            customTemplates: config.customMeetingTemplates
+        ) else {
+            completion(.failure(MeetingTemplateSelectionError.templateNoLongerExists))
+            return
+        }
+        resummarize(meeting: meeting, using: templateSnapshot, completion: completion)
+    }
+
+    private func resummarize(
+        meeting: MeetingRecord,
+        using templateSnapshot: MeetingTemplateSnapshot,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
         Task { [weak self] in
             guard let self else { return }
-            // Regenerate title from transcript
-            let newTitle: String
-            if let autoTitle = await MeetingSummaryClient.generateTitle(transcript: meeting.rawTranscript, config: self.config),
-               !autoTitle.isEmpty {
-                newTitle = autoTitle
-            } else {
-                newTitle = meeting.title
-            }
+            let plan = MeetingResummarizationPolicy.plan(for: meeting)
             let notes = await MeetingSummaryClient.summarize(
                 transcript: meeting.rawTranscript,
-                meetingTitle: newTitle,
-                config: self.config
+                meetingTitle: plan.promptTitle,
+                config: self.config,
+                template: templateSnapshot,
+                existingNotes: self.notesContextForResummary(meeting)
             )
-            try? self.dictationStore.updateMeeting(id: meeting.id, title: newTitle, formattedNotes: notes)
-            await MainActor.run {
-                self.syncAppState()
-                self.historyWindowController?.reload()
-                completion()
+
+            do {
+                try self.dictationStore.updateMeetingSummary(
+                    id: meeting.id,
+                    title: plan.persistedTitle,
+                    formattedNotes: notes,
+                    selectedTemplateID: templateSnapshot.id,
+                    selectedTemplateName: templateSnapshot.name,
+                    selectedTemplateKind: templateSnapshot.kind,
+                    selectedTemplatePrompt: templateSnapshot.prompt
+                )
+                await MainActor.run {
+                    self.syncAppState()
+                    self.historyWindowController?.reload()
+                    completion(.success(()))
+                }
+            } catch {
+                fputs("[muesli-native] failed to persist meeting summary: \(error)\n", stderr)
+                await MainActor.run {
+                    completion(.failure(MeetingSummaryPersistenceError.failedToSaveSummary(underlying: error)))
+                }
             }
         }
     }
 
     // MARK: - Meeting Editing
+
+    private func notesContextForResummary(_ meeting: MeetingRecord) -> String? {
+        guard meeting.notesState == .structuredNotes else { return nil }
+        let trimmed = meeting.formattedNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : meeting.formattedNotes
+    }
 
     func updateMeetingTitle(id: Int64, title: String) {
         try? dictationStore.updateMeetingTitle(id: id, title: title)
@@ -640,7 +820,11 @@ final class MuesliController: NSObject {
                     rawTranscript: result.rawTranscript,
                     formattedNotes: result.formattedNotes,
                     micAudioPath: result.micAudioPath,
-                    systemAudioPath: result.systemAudioPath
+                    systemAudioPath: result.systemAudioPath,
+                    selectedTemplateID: result.templateSnapshot.id,
+                    selectedTemplateName: result.templateSnapshot.name,
+                    selectedTemplateKind: result.templateSnapshot.kind,
+                    selectedTemplatePrompt: result.templateSnapshot.prompt
                 )
             } catch {
                 fputs("[muesli-native] meeting transcription failed: \(error)\n", stderr)

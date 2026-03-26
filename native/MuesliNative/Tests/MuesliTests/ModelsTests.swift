@@ -120,12 +120,14 @@ struct AppConfigTests {
         #expect(config.sttBackend == BackendOption.whisper.backend)
         #expect(config.sttModel == BackendOption.whisper.model)
         #expect(config.meetingSummaryBackend == "openai")
+        #expect(config.defaultMeetingTemplateID == MeetingTemplates.autoID)
         #expect(config.openAIAPIKey.isEmpty)
         #expect(config.openRouterAPIKey.isEmpty)
         #expect(config.dictationHotkey == .default)
         #expect(config.showFloatingIndicator == true)
         #expect(config.hasCompletedOnboarding == false)
         #expect(config.userName.isEmpty)
+        #expect(config.customMeetingTemplates.isEmpty)
     }
 
     @Test("JSON encode/decode round-trip")
@@ -134,6 +136,15 @@ struct AppConfigTests {
         config.openAIAPIKey = "sk-test-key-123"
         config.userName = "Test User"
         config.hasCompletedOnboarding = true
+        config.defaultMeetingTemplateID = "weekly-team-meeting"
+        config.customMeetingTemplates = [
+            CustomMeetingTemplate(
+                id: "tmpl_123",
+                name: "Customer Follow-Up",
+                prompt: "## Summary",
+                icon: "dollarsign.circle"
+            )
+        ]
 
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
@@ -141,6 +152,10 @@ struct AppConfigTests {
         #expect(decoded.openAIAPIKey == "sk-test-key-123")
         #expect(decoded.userName == "Test User")
         #expect(decoded.hasCompletedOnboarding == true)
+        #expect(decoded.defaultMeetingTemplateID == "weekly-team-meeting")
+        #expect(decoded.customMeetingTemplates.count == 1)
+        #expect(decoded.customMeetingTemplates.first?.name == "Customer Follow-Up")
+        #expect(decoded.customMeetingTemplates.first?.icon == "dollarsign.circle")
     }
 
     @Test("JSON coding keys use snake_case")
@@ -153,6 +168,8 @@ struct AppConfigTests {
         #expect(json["stt_model"] != nil)
         #expect(json["has_completed_onboarding"] != nil)
         #expect(json["user_name"] != nil)
+        #expect(json["default_meeting_template_id"] != nil)
+        #expect(json["custom_meeting_templates"] != nil)
     }
 
     @Test("decodes with missing fields using defaults")
@@ -164,6 +181,144 @@ struct AppConfigTests {
         #expect(config.openAIAPIKey.isEmpty)
         #expect(config.showFloatingIndicator == true)
         #expect(config.hasCompletedOnboarding == false)
+        #expect(config.defaultMeetingTemplateID == MeetingTemplates.autoID)
+        #expect(config.customMeetingTemplates.isEmpty)
+    }
+
+    @Test("custom templates decode missing icon with fallback")
+    func customTemplateMissingIconUsesFallback() throws {
+        let json = """
+        {
+          "custom_meeting_templates": [
+            {
+              "id": "tmpl_123",
+              "name": "Customer Follow-Up",
+              "prompt": "## Summary"
+            }
+          ]
+        }
+        """
+        let data = json.data(using: .utf8)!
+        let config = try JSONDecoder().decode(AppConfig.self, from: data)
+
+        #expect(config.customMeetingTemplates.count == 1)
+        #expect(config.customMeetingTemplates.first?.icon == MeetingTemplates.customIconFallback)
+    }
+
+    @Test("custom templates normalize invalid icons")
+    func customTemplateInvalidIconUsesFallback() {
+        let template = CustomMeetingTemplate(
+            id: "tmpl_invalid",
+            name: "Test",
+            prompt: "Prompt",
+            icon: "invalid.icon"
+        )
+
+        #expect(template.icon == MeetingTemplates.customIconFallback)
+        #expect(MeetingTemplates.customDefinition(from: template).icon == MeetingTemplates.customIconFallback)
+    }
+}
+
+@Suite("MeetingResummarizationPolicy")
+struct MeetingResummarizationPolicyTests {
+
+    @Test("resummarize preserves the existing meeting title")
+    func preservesExistingMeetingTitle() {
+        let meeting = MeetingRecord(
+            id: 42,
+            title: "Customer pilot follow-up",
+            startTime: "2026-03-24T10:00:00Z",
+            durationSeconds: 1800,
+            rawTranscript: "Transcript",
+            formattedNotes: "## Notes",
+            wordCount: 123,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            selectedTemplateID: MeetingTemplates.autoID,
+            selectedTemplateName: "Auto",
+            selectedTemplateKind: .auto,
+            selectedTemplatePrompt: ""
+        )
+
+        #expect(
+            MeetingResummarizationPolicy.plan(for: meeting) ==
+            MeetingResummarizationPlan(
+                promptTitle: "Customer pilot follow-up",
+                persistedTitle: "Customer pilot follow-up"
+            )
+        )
+    }
+
+    @Test("blank titles fall back to Meeting in prompts without overwriting storage")
+    func blankMeetingTitlesFallback() {
+        let meeting = MeetingRecord(
+            id: 43,
+            title: "   ",
+            startTime: "2026-03-24T10:00:00Z",
+            durationSeconds: 1800,
+            rawTranscript: "Transcript",
+            formattedNotes: "## Notes",
+            wordCount: 123,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            selectedTemplateID: MeetingTemplates.autoID,
+            selectedTemplateName: "Auto",
+            selectedTemplateKind: .auto,
+            selectedTemplatePrompt: ""
+        )
+
+        #expect(
+            MeetingResummarizationPolicy.plan(for: meeting) ==
+            MeetingResummarizationPlan(
+                promptTitle: "Meeting",
+                persistedTitle: "   "
+            )
+        )
+    }
+}
+
+@Suite("Meeting template resolution")
+struct MeetingTemplateResolutionTests {
+
+    @Test("exact resolution returns nil for deleted custom templates")
+    func exactResolutionReturnsNilForDeletedCustomTemplates() {
+        let customTemplates = [
+            CustomMeetingTemplate(
+                id: "tmpl_existing",
+                name: "Existing Template",
+                prompt: "## Summary",
+                icon: "person.2"
+            )
+        ]
+
+        #expect(
+            MeetingTemplates.resolveExactDefinition(
+                id: "tmpl_deleted",
+                customTemplates: customTemplates
+            ) == nil
+        )
+    }
+
+    @Test("exact resolution still supports auto and built-in templates")
+    func exactResolutionSupportsDefaultTemplates() {
+        let builtIn = MeetingTemplates.builtIns.first!
+
+        #expect(
+            MeetingTemplates.resolveExactDefinition(
+                id: MeetingTemplates.autoID,
+                customTemplates: []
+            )?.id == MeetingTemplates.autoID
+        )
+        #expect(
+            MeetingTemplates.resolveExactDefinition(
+                id: builtIn.id,
+                customTemplates: []
+            )?.id == builtIn.id
+        )
     }
 }
 
