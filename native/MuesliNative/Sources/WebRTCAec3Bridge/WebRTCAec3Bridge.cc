@@ -52,6 +52,7 @@ struct WebRTCAec3Handle {
   int sample_rate_hz = 0;
   int channels = 0;
   int samples_per_frame = 0;
+  int audio_buffer_delay_ms = 0;
   webrtc::StreamConfig stream_config = webrtc::StreamConfig(16000, 1, false);
   webrtc::AudioFrame render_frame;
   webrtc::AudioFrame capture_frame;
@@ -124,6 +125,16 @@ bool WebRTCAec3AnalyzeRender(WebRTCAec3Handle *handle,
   return true;
 }
 
+bool WebRTCAec3SetAudioBufferDelay(WebRTCAec3Handle *handle,
+                                   int delay_ms) {
+  if (!handle || delay_ms < 0) {
+    return false;
+  }
+
+  handle->audio_buffer_delay_ms = delay_ms;
+  return true;
+}
+
 bool WebRTCAec3ProcessCapture(WebRTCAec3Handle *handle,
                               const int16_t *input_samples,
                               int sample_count,
@@ -144,7 +155,7 @@ bool WebRTCAec3ProcessCapture(WebRTCAec3Handle *handle,
   handle->echo_control->AnalyzeCapture(handle->capture_audio.get());
   SplitIfNeeded(handle->capture_audio.get());
   handle->high_pass_filter->Process(handle->capture_audio.get());
-  handle->echo_control->SetAudioBufferDelay(0);
+  handle->echo_control->SetAudioBufferDelay(handle->audio_buffer_delay_ms);
   handle->echo_control->ProcessCapture(handle->capture_audio.get(), false);
   MergeIfNeeded(handle->capture_audio.get());
   handle->capture_audio->CopyTo(&handle->capture_frame);

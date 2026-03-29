@@ -68,6 +68,12 @@ struct MeetingSessionResult {
     let templateSnapshot: MeetingTemplateSnapshot
 }
 
+enum MeetingProcessingStage {
+    case transcribingAudio
+    case generatingTitle
+    case summarizingNotes
+}
+
 final class MeetingSession {
     private let title: String
     private let calendarEventID: String?
@@ -84,11 +90,14 @@ final class MeetingSession {
     private var meetingAecProcessor: MeetingAecProcessor?
     private var retainedRecordingWriter: MeetingRecordingWriter?
     private var retainedRecordingWriterError: Error?
+    private let outputRouteMonitor = AudioOutputRouteMonitor()
+    private var latestOutputRoute: AudioOutputRouteSnapshot?
     /// VAD controller for speech-boundary chunk rotation
     private var vadController: StreamingVadController?
     private let micChunkCollector = MeetingChunkCollector()
     /// Track chunk start times for timestamp offsets
     private var currentChunkStartTime: Date?
+    var onProgress: ((MeetingProcessingStage) -> Void)?
 
     /// Current mic power level for waveform visualization.
     func currentPower() -> Float {
@@ -146,6 +155,7 @@ final class MeetingSession {
             retainedRecordingWriter = nil
             processedMicChunkRecorder?.cancel()
             processedMicChunkRecorder = nil
+            outputRouteMonitor.stop()
             meetingAecProcessor?.reset()
             meetingAecProcessor = nil
             streamingMicRecorder.cancel()
@@ -175,6 +185,7 @@ final class MeetingSession {
         retainedRecordingWriterError = nil
         processedMicChunkRecorder?.cancel()
         processedMicChunkRecorder = nil
+        outputRouteMonitor.stop()
         meetingAecProcessor?.reset()
         meetingAecProcessor = nil
         fullSessionMicRecorder.cancel()
@@ -191,6 +202,7 @@ final class MeetingSession {
 
     func stop() async throws -> MeetingSessionResult {
         isRecording = false
+        onProgress?(.transcribingAudio)
         let meetingStart = self.startTime ?? Date()
         let endTime = Date()
         var micSegments: [SpeechSegment] = []
@@ -199,6 +211,7 @@ final class MeetingSession {
         vadController?.stop()
         vadController = nil
         streamingMicRecorder.onAudioBuffer = nil
+        outputRouteMonitor.stop()
 
         let finalProcessedTail = meetingAecProcessor?.flushCaptureRemainder() ?? []
         if !finalProcessedTail.isEmpty {
@@ -208,6 +221,7 @@ final class MeetingSession {
         // Stop mic and get last cleaned chunk
         let lastMicURL = processedMicChunkRecorder?.stop()
         processedMicChunkRecorder = nil
+        let aecDiagnostics = meetingAecProcessor?.diagnosticsSnapshot()
         meetingAecProcessor?.reset()
         meetingAecProcessor = nil
         let rawStreamingMicURL = streamingMicRecorder.stop()
@@ -300,6 +314,7 @@ final class MeetingSession {
             )
 
             let generatedTitle: String
+            onProgress?(.generatingTitle)
             if let autoTitle = await MeetingSummaryClient.generateTitle(transcript: rawTranscript, config: config),
                !autoTitle.isEmpty {
                 generatedTitle = autoTitle
@@ -312,12 +327,17 @@ final class MeetingSession {
                 id: config.defaultMeetingTemplateID,
                 customTemplates: config.customMeetingTemplates
             )
+            onProgress?(.summarizingNotes)
             let formattedNotes = await MeetingSummaryClient.summarize(
                 transcript: rawTranscript,
                 meetingTitle: generatedTitle,
                 config: config,
                 template: templateSnapshot
             )
+
+            if let aecDiagnostics {
+                fputs("\(aecDiagnostics.summaryLine)\n", stderr)
+            }
 
             return MeetingSessionResult(
                 title: generatedTitle,
@@ -412,11 +432,44 @@ final class MeetingSession {
         do {
             meetingAecProcessor = try MeetingAecProcessor()
             fputs("[meeting] WebRTC AEC3 enabled for mic transcription path\n", stderr)
+            configureOutputRouteMonitoring()
         } catch {
             meetingAecProcessor = nil
             fputs("[meeting] WebRTC AEC3 unavailable, falling back to raw mic chunks: \(error)\n", stderr)
         }
         configureRealtimeMicCallbacks(vadManager: vadManager)
+    }
+
+    private func configureOutputRouteMonitoring() {
+        outputRouteMonitor.stop()
+        outputRouteMonitor.onRouteChanged = { [weak self] snapshot in
+            self?.applyOutputRoute(snapshot)
+        }
+        outputRouteMonitor.start()
+        if let currentRoute = outputRouteMonitor.currentRoute() {
+            applyOutputRoute(currentRoute)
+        } else {
+            meetingAecProcessor?.updateMode(.enabled(delayMs: 0))
+            fputs("[meeting] AEC route defaulted to speaker [delay=0ms]\n", stderr)
+        }
+    }
+
+    private func applyOutputRoute(_ snapshot: AudioOutputRouteSnapshot) {
+        guard latestOutputRoute != snapshot else { return }
+        let previousRoute = latestOutputRoute
+        latestOutputRoute = snapshot
+
+        let mode: MeetingAecMode
+        switch snapshot.routeKind {
+        case .speakerLike:
+            mode = .enabled(delayMs: snapshot.estimatedDelayMs)
+        case .headphoneLike:
+            mode = .bypassed(reason: snapshot.routeKind.rawValue)
+        }
+        meetingAecProcessor?.updateMode(mode)
+
+        let routePrefix = previousRoute == nil ? "[meeting] AEC route:" : "[meeting] AEC route changed:"
+        fputs("\(routePrefix) \(snapshot.description)\n", stderr)
     }
 
     private func configureRealtimeMicCallbacks(vadManager: VadManager?) {
