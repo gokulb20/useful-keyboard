@@ -72,6 +72,15 @@ struct BackendOption: Equatable {
         recommended: false
     )
 
+    static let cohereTranscribe = BackendOption(
+        backend: "cohere",
+        model: "phequals/cohere-transcribe-coreml-int8",
+        label: "Cohere Transcribe",
+        sizeLabel: "~2.0 GB",
+        description: "INT8 CoreML, autoregressive, experimental. English. Fast 8-layer decoder (#1 Open ASR Leaderboard). Final transcript after stop.",
+        recommended: false
+    )
+
     // Default alias
     static let whisper = parakeetMultilingual
 
@@ -84,7 +93,7 @@ struct BackendOption: Equatable {
     ]
 
     static let experimental: [BackendOption] = [
-        .qwen3Asr, .canaryQwen, .nemotronStreaming,
+        .qwen3Asr, .canaryQwen, .cohereTranscribe, .nemotronStreaming,
     ]
 
     /// Models available for download and use.
@@ -138,6 +147,8 @@ struct BackendOption: Equatable {
             return fm.fileExists(atPath: path.path)
         case "canary":
             return CanaryQwenModelStore.isAvailableLocally()
+        case "cohere":
+            return CohereTranscribeModelStore.isAvailableLocally()
         default:
             return false
         }

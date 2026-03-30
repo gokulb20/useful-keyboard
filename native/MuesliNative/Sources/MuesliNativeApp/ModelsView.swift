@@ -478,6 +478,8 @@ struct ModelsView: View {
             try? fm.removeItem(at: path)
         case "canary":
             try? fm.removeItem(at: CanaryQwenModelStore.cacheDirectory())
+        case "cohere":
+            try? fm.removeItem(at: CohereTranscribeModelStore.cacheDirectory())
         case "fluidaudio":
             // FluidAudio models are in ~/Library/Application Support/FluidAudio/Models/
             let supportDir = fm.homeDirectoryForCurrentUser
@@ -552,6 +554,8 @@ struct ModelsView: View {
                 || fm.fileExists(atPath: supportDir.appendingPathComponent("f32/vocab.json").path)
         case "canary":
             return CanaryQwenModelStore.isAvailableLocally()
+        case "cohere":
+            return CohereTranscribeModelStore.isAvailableLocally()
         default:
             return false
         }
