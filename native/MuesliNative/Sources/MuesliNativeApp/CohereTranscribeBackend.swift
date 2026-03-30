@@ -47,33 +47,13 @@ private enum CohereTranscribeConfig {
             .appendingPathComponent("cohere-transcribe-coreml-int8", isDirectory: true)
     }
 
-    static var profilingLogURL: URL {
-        AppIdentity.supportDirectoryURL.appendingPathComponent("cohere-profiling.log")
-    }
 }
 
-// MARK: - Profiling
+// MARK: - Logging
 
 private enum CohereProfilingLog {
-    private static let fileURL = CohereTranscribeConfig.profilingLogURL
-
     static func write(_ message: String) {
         fputs("\(message)\n", stderr)
-        let directory = fileURL.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            if !FileManager.default.fileExists(atPath: fileURL.path) {
-                try Data().write(to: fileURL)
-            }
-            let handle = try FileHandle(forWritingTo: fileURL)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            if let data = "\(message)\n".data(using: .utf8) {
-                try handle.write(contentsOf: data)
-            }
-        } catch {
-            fputs("[cohere][profile-log-error] \(error)\n", stderr)
-        }
     }
 }
 
@@ -181,6 +161,7 @@ private final class CohereMelSpectrogram {
     private let hop: Int
     private let winLength: Int
     private let fftSetup: FFTSetup
+    private let fftLog2n: vDSP_Length
     private static let preemph: Float = 0.97
     private static let logZeroGuard: Float = 5.960464477539063e-08 // 2^-24
     private static let ditherConstant: Float = 1e-05
@@ -225,6 +206,7 @@ private final class CohereMelSpectrogram {
         }
 
         let log2n = vDSP_Length(log2(Double(nFFT)))
+        self.fftLog2n = log2n
         guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
             throw NSError(domain: "CohereTranscribe", code: 23, userInfo: [
                 NSLocalizedDescriptionKey: "Failed to create FFT setup for nFFT=\(nFFT)",
@@ -238,81 +220,144 @@ private final class CohereMelSpectrogram {
     }
 
     /// Compute log-mel spectrogram from raw 16kHz audio.
-    /// Returns `(mel: [nMels][melLength], realFrameCount: Int)` — normalized over real frames,
-    /// zero-padded to `melLength` (3500). `realFrameCount` is capped at `melLength`.
-    func compute(audio: [Float]) -> (mel: [[Float]], realFrameCount: Int) {
+    /// Returns `(mel: [Float], realFrameCount: Int)` — flat [nMels * melLength] in row-major order,
+    /// normalized over real frames, zero-padded to `melLength` (3500).
+    func compute(audio: [Float]) -> (mel: [Float], realFrameCount: Int) {
         let count = audio.count
         let melLength = CohereTranscribeConfig.melLength
 
         // 1. Pre-emphasis: x[n] = x[n] - 0.97 * x[n-1]
+        //    vDSP approach: shifted = audio[0..<count-1] * (-0.97), then add audio[1..<count]
         var preemph = [Float](repeating: 0, count: count)
         preemph[0] = audio[0]
-        for i in 1..<count {
-            preemph[i] = audio[i] - Self.preemph * audio[i - 1]
+        if count > 1 {
+            var negCoeff = -Self.preemph
+            // preemph[1:] = audio[1:] + (-0.97) * audio[0:count-1]
+            audio.withUnsafeBufferPointer { audioBuf in
+                preemph.withUnsafeMutableBufferPointer { outBuf in
+                    // scaled = audio[0..count-2] * (-0.97)
+                    vDSP_vsmul(audioBuf.baseAddress!, 1, &negCoeff, outBuf.baseAddress! + 1, 1, vDSP_Length(count - 1))
+                    // outBuf[1:] += audio[1:]
+                    vDSP_vadd(outBuf.baseAddress! + 1, 1, audioBuf.baseAddress! + 1, 1, outBuf.baseAddress! + 1, 1, vDSP_Length(count - 1))
+                }
+            }
         }
 
         // 2. Center=True, pad_mode="constant" (zero-pad both sides by nFFT/2)
         let pad = nFFT / 2
         var padded = [Float](repeating: 0, count: pad + count + pad)
-        for i in 0..<count {
-            padded[pad + i] = preemph[i]
+        _ = preemph.withUnsafeBufferPointer { src in
+            padded.withUnsafeMutableBufferPointer { dst in
+                memcpy(dst.baseAddress! + pad, src.baseAddress!, count * MemoryLayout<Float>.stride)
+            }
         }
-        // Left and right pads are already zero from initialization
 
         let nRealFrames = min(1 + (padded.count - nFFT) / hop, melLength)
 
-        // 3. STFT → magnitude → power (mag_power=2.0)
-        // magnitude = sqrt(re^2 + im^2), power = magnitude^2 = re^2 + im^2
-        var powerSpec = [Float](repeating: 0, count: nRealFrames * nBins)
+        // 3. STFT → power spectrum
+        // Reusable per-frame buffers
         var frame = [Float](repeating: 0, count: nFFT)
+        let halfN = nFFT / 2
+        var realPart = [Float](repeating: 0, count: halfN)
+        var imagPart = [Float](repeating: 0, count: halfN)
+        let log2n = fftLog2n
 
-        for f in 0..<nRealFrames {
-            let start = f * hop
-            // Window the frame (window is winLength, zero-pad to nFFT)
-            for i in 0..<nFFT {
-                frame[i] = i < winLength ? padded[start + i] * window[i] : 0
-            }
-            let (re, im) = performRealFFT(frame)
-            for b in 0..<nBins {
-                powerSpec[f * nBins + b] = re[b] * re[b] + im[b] * im[b]
-            }
-        }
+        // powerSpec is [nRealFrames, nBins] row-major
+        var powerSpec = [Float](repeating: 0, count: nRealFrames * nBins)
 
-        // 4. Apply Slaney mel filterbank: mel = fb @ power_spec
-        // fb is [nMels, nBins], powerSpec is [nRealFrames, nBins]
-        // Result is [nMels, melLength] — only nRealFrames filled, rest zero
-        var melSpec = [[Float]](repeating: [Float](repeating: 0, count: melLength), count: nMels)
-        for m in 0..<nMels {
-            let fbRow = m * nBins
+        padded.withUnsafeBufferPointer { paddedBuf in
             for f in 0..<nRealFrames {
-                var sum: Float = 0
-                let psRow = f * nBins
-                for b in 0..<nBins {
-                    sum += filterBank[fbRow + b] * powerSpec[psRow + b]
+                let start = f * hop
+
+                // Window: multiply padded[start..<start+winLength] * window, zero-pad rest
+                frame.withUnsafeMutableBufferPointer { frameBuf in
+                    vDSP_vmul(paddedBuf.baseAddress! + start, 1, window, 1, frameBuf.baseAddress!, 1, vDSP_Length(winLength))
+                    // Zero the tail (winLength..<nFFT) if nFFT > winLength
+                    if nFFT > winLength {
+                        vDSP_vclr(frameBuf.baseAddress! + winLength, 1, vDSP_Length(nFFT - winLength))
+                    }
                 }
-                // 5. log(x + 2^-24) guard
-                melSpec[m][f] = logf(sum + Self.logZeroGuard)
+
+                // FFT in-place using pre-allocated buffers
+                realPart.withUnsafeMutableBufferPointer { rBuf in
+                    imagPart.withUnsafeMutableBufferPointer { iBuf in
+                        var splitComplex = DSPSplitComplex(realp: rBuf.baseAddress!, imagp: iBuf.baseAddress!)
+                        frame.withUnsafeBufferPointer { frameBuf in
+                            frameBuf.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: halfN) { complexPtr in
+                                vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(halfN))
+                            }
+                        }
+                        vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
+
+                        // Unpack and compute power = re² + im² directly into powerSpec row
+                        let psRow = f * nBins
+                        powerSpec.withUnsafeMutableBufferPointer { psBuf in
+                            let dst = psBuf.baseAddress! + psRow
+                            // Bin 0: real = realPart[0], imag = 0
+                            dst[0] = rBuf[0] * rBuf[0]
+                            // Bin N/2: real = imagPart[0], imag = 0
+                            dst[halfN] = iBuf[0] * iBuf[0]
+                            // Bins 1..<halfN: power = re² + im²
+                            // Use vDSP: square real, square imag, add
+                            var reSq = [Float](repeating: 0, count: halfN - 1)
+                            var imSq = [Float](repeating: 0, count: halfN - 1)
+                            vDSP_vsq(rBuf.baseAddress! + 1, 1, &reSq, 1, vDSP_Length(halfN - 1))
+                            vDSP_vsq(iBuf.baseAddress! + 1, 1, &imSq, 1, vDSP_Length(halfN - 1))
+                            vDSP_vadd(reSq, 1, imSq, 1, dst + 1, 1, vDSP_Length(halfN - 1))
+                        }
+                    }
+                }
             }
         }
+
+        // 4. Mel filterbank matmul: melRaw = filterBank × powerSpec^T
+        //    filterBank is [nMels, nBins], powerSpec is [nRealFrames, nBins]
+        //    We want result [nMels, nRealFrames] = filterBank [nMels × nBins] × powerSpecT [nBins × nRealFrames]
+        //    vDSP_mmul requires explicit transpose, so transpose powerSpec first
+        var powerSpecT = [Float](repeating: 0, count: nBins * nRealFrames)
+        vDSP_mtrans(powerSpec, 1, &powerSpecT, 1, vDSP_Length(nBins), vDSP_Length(nRealFrames))
+
+        var melRaw = [Float](repeating: 0, count: nMels * nRealFrames)
+        vDSP_mmul(filterBank, 1, powerSpecT, 1, &melRaw, 1,
+                  vDSP_Length(nMels), vDSP_Length(nRealFrames), vDSP_Length(nBins))
+
+        // 5. log(x + 2^-24) guard — vectorized
+        var guardVal = Self.logZeroGuard
+        var logMel = [Float](repeating: 0, count: nMels * nRealFrames)
+        // melRaw += guardVal
+        vDSP_vsadd(melRaw, 1, &guardVal, &logMel, 1, vDSP_Length(nMels * nRealFrames))
+        // in-place log
+        var vecLen = Int32(nMels * nRealFrames)
+        vvlogf(&logMel, logMel, &vecLen)
 
         // 6. Per-feature normalization using ONLY real frames (Bessel-corrected std)
-        //    Then zero-mask all frames beyond nRealFrames (matching Cohere's pad_value=0.0)
-        for m in 0..<nMels {
-            var sum: Float = 0
-            for f in 0..<nRealFrames {
-                sum += melSpec[m][f]
-            }
-            let mean = sum / Float(nRealFrames)
+        //    Output is flat [nMels * melLength], zero-padded beyond nRealFrames
+        var melSpec = [Float](repeating: 0, count: nMels * melLength)
+        let nrf = vDSP_Length(nRealFrames)
+        let invNm1 = 1.0 / Float(max(nRealFrames - 1, 1))
 
-            var sumSqDiff: Float = 0
-            for f in 0..<nRealFrames {
-                let diff = melSpec[m][f] - mean
-                sumSqDiff += diff * diff
-            }
-            // Bessel correction: divide by (N-1), then add dither constant to prevent div-by-zero
-            let std = sqrtf(sumSqDiff / Float(max(nRealFrames - 1, 1))) + Self.ditherConstant
-            for f in 0..<nRealFrames {
-                melSpec[m][f] = (melSpec[m][f] - mean) / std
+        for m in 0..<nMels {
+            let srcOffset = m * nRealFrames
+            let dstOffset = m * melLength
+
+            // mean
+            var mean: Float = 0
+            vDSP_meanv(logMel.withUnsafeBufferPointer { $0.baseAddress! + srcOffset }, 1, &mean, nrf)
+
+            // variance: measqv gives mean of squares, then var = meanSq - mean²
+            // But for Bessel correction we need sum((x-mean)²) / (N-1)
+            // Approach: subtract mean, square, sum, divide by N-1
+            var negMean = -mean
+            var centered = [Float](repeating: 0, count: nRealFrames)
+            vDSP_vsadd(logMel.withUnsafeBufferPointer { $0.baseAddress! + srcOffset }, 1, &negMean, &centered, 1, nrf)
+            var sumSq: Float = 0
+            vDSP_dotpr(centered, 1, centered, 1, &sumSq, nrf)
+            let std = sqrtf(sumSq * invNm1) + Self.ditherConstant
+
+            // normalize: (x - mean) / std = centered / std
+            var invStd = 1.0 / std
+            melSpec.withUnsafeMutableBufferPointer { buf in
+                vDSP_vsmul(centered, 1, &invStd, buf.baseAddress! + dstOffset, 1, nrf)
             }
             // Frames beyond nRealFrames are already zero from initialization
         }
@@ -320,61 +365,6 @@ private final class CohereMelSpectrogram {
         return (melSpec, nRealFrames)
     }
 
-    private func performRealFFT(_ input: [Float]) -> ([Float], [Float]) {
-        let n = input.count
-        let log2n = vDSP_Length(log2(Double(n)))
-        let halfN = n / 2
-        var realPart = [Float](repeating: 0, count: halfN)
-        var imagPart = [Float](repeating: 0, count: halfN)
-
-        input.withUnsafeBufferPointer { inputPtr in
-            realPart.withUnsafeMutableBufferPointer { realPtr in
-                imagPart.withUnsafeMutableBufferPointer { imagPtr in
-                    var splitComplex = DSPSplitComplex(
-                        realp: realPtr.baseAddress!,
-                        imagp: imagPtr.baseAddress!
-                    )
-                    inputPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: halfN) { complexPtr in
-                        vDSP_ctoz(complexPtr, 2, &splitComplex, 1, vDSP_Length(halfN))
-                    }
-                    vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
-                }
-            }
-        }
-
-        // Unpack: bin 0 real = realPart[0], bin N/2 real = imagPart[0]
-        let nBins = halfN + 1
-        var re = [Float](repeating: 0, count: nBins)
-        var im = [Float](repeating: 0, count: nBins)
-        re[0] = realPart[0]
-        im[0] = 0
-        re[halfN] = imagPart[0]
-        im[halfN] = 0
-        for i in 1..<halfN {
-            re[i] = realPart[i]
-            im[i] = imagPart[i]
-        }
-        return (re, im)
-    }
-
-    private func naiveDFT(_ input: [Float]) -> ([Float], [Float]) {
-        let n = input.count
-        let nBins = n / 2 + 1
-        var re = [Float](repeating: 0, count: nBins)
-        var im = [Float](repeating: 0, count: nBins)
-        for k in 0..<nBins {
-            var sumRe: Float = 0
-            var sumIm: Float = 0
-            for t in 0..<n {
-                let angle = -2.0 * Float.pi * Float(k) * Float(t) / Float(n)
-                sumRe += input[t] * cosf(angle)
-                sumIm += input[t] * sinf(angle)
-            }
-            re[k] = sumRe
-            im[k] = sumIm
-        }
-        return (re, im)
-    }
 }
 
 // MARK: - SentencePiece Tokenizer
@@ -696,8 +686,13 @@ private struct CohereTranscribeModels {
     }
 
     private static func preferredEncoderPackageName(in directory: URL) -> String {
-        let dynamicURL = directory.appendingPathComponent(CohereTranscribeConfig.dynamicEncoderPackage, isDirectory: true)
-        if FileManager.default.fileExists(atPath: dynamicURL.path) {
+        let fm = FileManager.default
+        let dynamicPackage = directory.appendingPathComponent(CohereTranscribeConfig.dynamicEncoderPackage, isDirectory: true)
+        let dynamicCompiled = directory.appendingPathComponent(
+            CohereTranscribeConfig.dynamicEncoderPackage.replacingOccurrences(of: ".mlpackage", with: ".mlmodelc"),
+            isDirectory: true
+        )
+        if fm.fileExists(atPath: dynamicPackage.path) || fm.fileExists(atPath: dynamicCompiled.path) {
             return CohereTranscribeConfig.dynamicEncoderPackage
         }
         return CohereTranscribeConfig.encoderPackage
@@ -709,19 +704,25 @@ private struct CohereTranscribeModels {
 @available(macOS 15, *)
 private final class CohereTranscribeManager {
     private let models: CohereTranscribeModels
-    private let decodeUpdateMasks: [Int: MLMultiArray]
-    private let decodeValidMasks: [Int: MLMultiArray]
+    private var decodeUpdateMaskCache: [Int: MLMultiArray] = [:]
+    private var decodeValidMaskCache: [Int: MLMultiArray] = [:]
 
-    init(models: CohereTranscribeModels) throws {
+    init(models: CohereTranscribeModels) {
         self.models = models
-        var updateMasks: [Int: MLMultiArray] = [:]
-        var validMasks: [Int: MLMultiArray] = [:]
-        for position in 0..<CohereTranscribeConfig.maxSeqLen {
-            updateMasks[position] = try Self.createUpdateMask(position: position)
-            validMasks[position] = try Self.createValidMask(lastValidPosition: position)
-        }
-        self.decodeUpdateMasks = updateMasks
-        self.decodeValidMasks = validMasks
+    }
+
+    private func updateMask(for position: Int) throws -> MLMultiArray {
+        if let cached = decodeUpdateMaskCache[position] { return cached }
+        let mask = try Self.createUpdateMask(position: position)
+        decodeUpdateMaskCache[position] = mask
+        return mask
+    }
+
+    private func validMask(for position: Int) throws -> MLMultiArray {
+        if let cached = decodeValidMaskCache[position] { return cached }
+        let mask = try Self.createValidMask(lastValidPosition: position)
+        decodeValidMaskCache[position] = mask
+        return mask
     }
 
     func transcribe(audioSamples: [Float]) async throws -> (text: String, profile: CohereProfilingSummary) {
@@ -768,19 +769,17 @@ private final class CohereTranscribeManager {
         return (merged, profile)
     }
 
-    private func transcribeChunk(mel: [[Float]], realMelFrames: Int, chunkIndex: Int) throws -> (transcript: String, generatedTokenCount: Int, timing: CohereTimingBreakdown) {
+    private func transcribeChunk(mel: [Float], realMelFrames: Int, chunkIndex: Int) throws -> (transcript: String, generatedTokenCount: Int, timing: CohereTimingBreakdown) {
         var timing = CohereTimingBreakdown()
         let melLength = CohereTranscribeConfig.melLength
         let nMels = CohereTranscribeConfig.nMels
         let encLen = CohereTranscribeConfig.encLen
 
-        // Build mel MLMultiArray [1, 128, 3500] — mel is already normalized & zero-padded to melLength
+        // Build mel MLMultiArray [1, 128, 3500] — mel is flat [nMels * melLength], already normalized & zero-padded
         let melArray = try MLMultiArray(shape: [1, NSNumber(value: nMels), NSNumber(value: melLength)], dataType: .float32)
         let melPtr = melArray.dataPointer.bindMemory(to: Float.self, capacity: nMels * melLength)
-        for m in 0..<nMels {
-            for f in 0..<melLength {
-                melPtr[m * melLength + f] = mel[m][f]
-            }
+        _ = mel.withUnsafeBufferPointer { src in
+            memcpy(melPtr, src.baseAddress!, nMels * melLength * MemoryLayout<Float>.stride)
         }
 
         // Build encoder mask [1, enc_len]: 1.0 for real positions, 0.0 for padded
@@ -855,8 +854,8 @@ private final class CohereTranscribeManager {
             if nextToken == CohereTranscribeConfig.eosTokenId { break }
             generatedIds.append(nextToken)
             guard currentPosition < CohereTranscribeConfig.maxSeqLen else { break }
-            guard let updateMask = decodeUpdateMasks[currentPosition],
-                  let validMask = decodeValidMasks[currentPosition] else { break }
+            let updateMask = try updateMask(for: currentPosition)
+            let validMask = try validMask(for: currentPosition)
 
             tokenIdPtr[0] = Int32(nextToken)
             let decodeInput = try MLDictionaryFeatureProvider(dictionary: [
@@ -981,20 +980,6 @@ private final class CohereTranscribeManager {
         return chunks
     }
 
-    private func argmax(logits: MLMultiArray) -> Int {
-        let count = logits.count
-        guard count > 0 else { return 0 }
-        let ptr = logits.dataPointer.bindMemory(to: Float.self, capacity: count)
-        var maxVal = ptr[0]
-        var maxIdx = 0
-        for i in 1..<count {
-            if ptr[i] > maxVal {
-                maxVal = ptr[i]
-                maxIdx = i
-            }
-        }
-        return maxIdx
-    }
 
     private func argmaxLocal(logits: [Float]) -> Int {
         guard !logits.isEmpty else { return 0 }
