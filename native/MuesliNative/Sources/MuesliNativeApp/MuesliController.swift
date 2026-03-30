@@ -206,6 +206,7 @@ final class MuesliController: NSObject {
         micActivityMonitor.onMeetingDetected = { [weak self] detection in
             guard let self,
                   !self.isMeetingRecording(),
+                  !self.isStartingMeetingRecording,
                   self.config.showMeetingDetectionNotification else { return }
             let title = detection.meetingTitle ?? detection.appName
             self.meetingNotification.show(
@@ -815,6 +816,8 @@ final class MuesliController: NSObject {
     func startMeetingRecording(title: String = "Meeting") {
         guard !isMeetingRecording(), !isStartingMeetingRecording else { return }
         isStartingMeetingRecording = true
+        meetingNotification.close()
+        micActivityMonitor.suppressWhileActive()
         let meetingSession = MeetingSession(
             title: title,
             calendarEventID: nil,
@@ -840,6 +843,7 @@ final class MuesliController: NSObject {
                 self.statusBarController?.refresh()
             } catch {
                 fputs("[muesli-native] failed to start meeting: \(error)\n", stderr)
+                self.micActivityMonitor.resumeAfterCooldown()
                 self.statusBarController?.setStatus("Idle")
                 self.statusBarController?.refresh()
                 self.setState(.idle)
