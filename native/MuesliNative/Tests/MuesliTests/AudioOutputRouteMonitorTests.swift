@@ -18,6 +18,12 @@ struct AudioOutputRouteMonitorTests {
             uid: nil,
             transportType: UInt32(kAudioDeviceTransportTypeBuiltIn)
         ) == .headphoneLike)
+
+        #expect(AudioOutputRouteMonitor.classifyRoute(
+            name: "WH-1000XM5",
+            uid: "sony-bt-output",
+            transportType: UInt32(kAudioDeviceTransportTypeBluetooth)
+        ) == .headphoneLike)
     }
 
     @Test("defaults non-headphone routes to speaker-like")

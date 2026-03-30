@@ -95,6 +95,7 @@ final class MeetingSession {
     /// VAD controller for speech-boundary chunk rotation
     private var vadController: StreamingVadController?
     private let micChunkCollector = MeetingChunkCollector()
+    private let chunkRotationQueue = DispatchQueue(label: "MuesliNative.MeetingSession.chunkRotation")
     /// Track chunk start times for timestamp offsets
     private var currentChunkStartTime: Date?
     var onProgress: ((MeetingProcessingStage) -> Void)?
@@ -165,9 +166,11 @@ final class MeetingSession {
             throw error
         }
         let now = Date()
-        startTime = now
-        currentChunkStartTime = now
-        isRecording = true
+        chunkRotationQueue.sync {
+            startTime = now
+            currentChunkStartTime = now
+            isRecording = true
+        }
         if vadController != nil {
             fputs("[meeting] started with VAD-driven chunk rotation\n", stderr)
         } else {
@@ -177,14 +180,19 @@ final class MeetingSession {
 
     /// Abandon the recording — stop everything, delete temp files, don't transcribe.
     func discard() {
-        isRecording = false
+        let chunkRecorder = chunkRotationQueue.sync { () -> PCMChunkRecorder? in
+            isRecording = false
+            currentChunkStartTime = nil
+            let recorder = processedMicChunkRecorder
+            processedMicChunkRecorder = nil
+            return recorder
+        }
         vadController?.stop()
         vadController = nil
         retainedRecordingWriter?.cancel()
         retainedRecordingWriter = nil
         retainedRecordingWriterError = nil
-        processedMicChunkRecorder?.cancel()
-        processedMicChunkRecorder = nil
+        chunkRecorder?.cancel()
         outputRouteMonitor.stop()
         meetingAecProcessor?.reset()
         meetingAecProcessor = nil
@@ -201,9 +209,7 @@ final class MeetingSession {
     }
 
     func stop() async throws -> MeetingSessionResult {
-        isRecording = false
         onProgress?(.transcribingAudio)
-        let meetingStart = self.startTime ?? Date()
         let endTime = Date()
         var micSegments: [SpeechSegment] = []
 
@@ -214,19 +220,23 @@ final class MeetingSession {
         outputRouteMonitor.stop()
 
         let finalProcessedTail = meetingAecProcessor?.flushCaptureRemainder() ?? []
-        if !finalProcessedTail.isEmpty {
-            processedMicChunkRecorder?.append(finalProcessedTail)
+        let (meetingStart, lastChunkStart, lastMicURL) = chunkRotationQueue.sync { () -> (Date, Date, URL?) in
+            isRecording = false
+            let meetingStart = self.startTime ?? Date()
+            if !finalProcessedTail.isEmpty {
+                processedMicChunkRecorder?.append(finalProcessedTail)
+            }
+            let lastMicURL = processedMicChunkRecorder?.stop()
+            processedMicChunkRecorder = nil
+            let lastChunkStart = currentChunkStartTime ?? meetingStart
+            currentChunkStartTime = nil
+            return (meetingStart, lastChunkStart, lastMicURL)
         }
-
-        // Stop mic and get last cleaned chunk
-        let lastMicURL = processedMicChunkRecorder?.stop()
-        processedMicChunkRecorder = nil
         let aecDiagnostics = meetingAecProcessor?.diagnosticsSnapshot()
         meetingAecProcessor?.reset()
         meetingAecProcessor = nil
         let rawStreamingMicURL = streamingMicRecorder.stop()
         streamingMicRecorder.onPCMSamples = nil
-        let lastChunkStart = currentChunkStartTime ?? meetingStart
         let fullSessionMicURL = fullSessionMicRecorder.stop()
         let retainedRecordingURL = retainedRecordingWriter?.stop()
         retainedRecordingWriter = nil
@@ -369,17 +379,20 @@ final class MeetingSession {
     /// Called by VAD on speech boundaries or max-duration fallback.
     /// Rotates the streaming mic file and sends the completed chunk for transcription.
     private func rotateChunk() {
-        guard isRecording else { return }
-        let meetingStart = self.startTime ?? Date()
-        let chunkStart = currentChunkStartTime ?? meetingStart
-
-        // Rotate the cleaned mic chunk file — no gap, AVAudioEngine tap keeps running
-        let chunkURL = processedMicChunkRecorder?.rotateFile()
-        currentChunkStartTime = Date()
+        let rotation = chunkRotationQueue.sync { () -> (meetingStart: Date, chunkStart: Date, chunkURL: URL)? in
+            guard isRecording else { return nil }
+            let meetingStart = self.startTime ?? Date()
+            let chunkStart = currentChunkStartTime ?? meetingStart
+            let chunkURL = processedMicChunkRecorder?.rotateFile()
+            currentChunkStartTime = Date()
+            guard let chunkURL else { return nil }
+            return (meetingStart, chunkStart, chunkURL)
+        }
 
         // Transcribe the completed chunk async
-        guard let chunkURL else { return }
-        let chunkOffset = chunkStart.timeIntervalSince(meetingStart)
+        guard let rotation else { return }
+        let chunkURL = rotation.chunkURL
+        let chunkOffset = rotation.chunkStart.timeIntervalSince(rotation.meetingStart)
         let chunkDuration = MeetingMicRepairPlanner.wavDurationSeconds(for: chunkURL)
         let backend = self.backend
 

@@ -13,15 +13,9 @@ final class PCMChunkRecorder {
 
     init(directoryName: String) throws {
         self.directoryName = directoryName
+        let initialState = try createFileState()
         lock.withLock {
-            $0 = (try? createFileState()) ?? State()
-        }
-        if lock.withLock({ $0.fileHandle == nil || $0.fileURL == nil }) {
-            throw NSError(
-                domain: "PCMChunkRecorder",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Could not create chunk recorder output file."]
-            )
+            $0 = initialState
         }
     }
 

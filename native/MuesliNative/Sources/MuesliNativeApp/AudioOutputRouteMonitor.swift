@@ -56,7 +56,20 @@ final class AudioOutputRouteMonitor {
             "headphone", "headphones", "headset", "airpods", "earbud", "earbuds",
             "earphone", "earphones", "buds", "beats",
         ]
+        let speakerKeywords = [
+            "speaker", "speakers", "display", "monitor", "tv", "homepod",
+        ]
         if headphoneKeywords.contains(where: { joinedDescription.contains($0) }) {
+            return .headphoneLike
+        }
+
+        if speakerKeywords.contains(where: { joinedDescription.contains($0) }) {
+            return .speakerLike
+        }
+
+        if let transportType,
+           transportType == UInt32(kAudioDeviceTransportTypeBluetooth) ||
+           transportType == UInt32(kAudioDeviceTransportTypeBluetoothLE) {
             return .headphoneLike
         }
 
@@ -292,7 +305,7 @@ final class AudioOutputRouteMonitor {
               let value else {
             return nil
         }
-        let string = value.takeUnretainedValue() as String
+        let string = value.takeRetainedValue() as String
         return string.isEmpty ? nil : string
     }
 }
