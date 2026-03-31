@@ -1070,10 +1070,12 @@ actor CohereTranscribeTranscriber {
             let modelDir = try await CohereTranscribeModelStore.resolvedDirectory(progress: progress)
             let dirMs = (CFAbsoluteTimeGetCurrent() - dirStart) * 1000
             CohereProfilingLog.write("[cohere][load] resolvedDirectory in \(String(format: "%.0f", dirMs))ms path=\(modelDir.path)")
+            try Task.checkCancellation()
             let modelsStart = CFAbsoluteTimeGetCurrent()
             let models = try await CohereTranscribeModels.load(from: modelDir)
             let modelsMs = (CFAbsoluteTimeGetCurrent() - modelsStart) * 1000
             CohereProfilingLog.write("[cohere][load] CohereTranscribeModels.load finished in \(String(format: "%.0f", modelsMs))ms")
+            try Task.checkCancellation()
             let managerStart = CFAbsoluteTimeGetCurrent()
             let loadedManager = CohereTranscribeManager(models: models)
             let managerMs = (CFAbsoluteTimeGetCurrent() - managerStart) * 1000
@@ -1120,6 +1122,8 @@ actor CohereTranscribeTranscriber {
     }
 
     func shutdown() {
+        loadTask?.cancel()
+        loadTask = nil
         manager = nil
         warmupTask?.cancel()
         warmupTask = nil
