@@ -74,7 +74,7 @@ struct BackendOption: Equatable {
 
     static let cohereTranscribe = BackendOption(
         backend: "cohere",
-        model: "phequals/cohere-transcribe-coreml-int8",
+        model: "phequals/cohere-transcribe-coreml-mixed-precision",
         label: "Cohere Transcribe",
         sizeLabel: "~3.8 GB",
         description: "Mixed precision (FP16 encoder + INT8 decoder). English. High accuracy (#1 Open ASR Leaderboard). Final transcript after stop. May decode hallucinated text during silence — use in quiet environments or with VAD.",
