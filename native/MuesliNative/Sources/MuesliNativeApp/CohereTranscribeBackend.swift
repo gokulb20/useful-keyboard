@@ -893,8 +893,9 @@ private final class CohereTranscribeManager {
     }
 
     /// Merge transcripts from overlapping audio chunks by deduplicating shared content.
-    /// Finds the longest suffix of transcript N that matches a prefix of transcript N+1
-    /// (word-level comparison) and removes the duplicate from the next transcript.
+    /// Uses fuzzy word matching to find where the next chunk's content diverges from
+    /// what was already transcribed, handling slight transcription differences in the
+    /// overlapping audio region.
     static func mergeOverlappingTranscripts(_ transcripts: [String]) -> String {
         guard transcripts.count > 1 else {
             return transcripts.first ?? ""
@@ -902,29 +903,51 @@ private final class CohereTranscribeManager {
 
         var merged = transcripts[0]
         for i in 1..<transcripts.count {
-            let prev = merged.split(separator: " ").map(String.init)
-            let next = transcripts[i].split(separator: " ").map(String.init)
-            guard !prev.isEmpty, !next.isEmpty else {
+            let prevWords = merged.split(separator: " ").map(String.init)
+            let nextWords = transcripts[i].split(separator: " ").map(String.init)
+            guard !prevWords.isEmpty, !nextWords.isEmpty else {
                 if !transcripts[i].isEmpty {
                     merged += " " + transcripts[i]
                 }
                 continue
             }
 
-            // Find longest suffix of prev that matches a prefix of next
-            // Check up to 30 words (5s overlap ≈ 25-35 words at ~6 words/s)
-            let maxCheck = min(prev.count, next.count, 30)
-            var bestOverlap = 0
-            for length in 1...maxCheck {
-                let suffix = prev.suffix(length)
-                let prefix = next.prefix(length)
-                if Array(suffix).map({ $0.lowercased() }) == Array(prefix).map({ $0.lowercased() }) {
-                    bestOverlap = length
+            // Search the tail of prev for the best anchor point in next.
+            // For each word near the end of prev, find if it appears near the start of next.
+            // The overlap region is ~5s ≈ 25-35 words, so check the last 40 words of prev
+            // against the first 40 words of next.
+            let tailSize = min(prevWords.count, 40)
+            let headSize = min(nextWords.count, 40)
+            let tail = prevWords.suffix(tailSize).map { $0.lowercased().filter(\.isLetter) }
+            let head = nextWords.prefix(headSize).map { $0.lowercased().filter(\.isLetter) }
+
+            // Find the longest contiguous run of matching words (allowing fuzzy single-word gaps)
+            var bestNextStart = 0
+            var bestRunLength = 0
+
+            for tailStart in 0..<tail.count {
+                for headStart in 0..<head.count {
+                    var matches = 0
+                    var ti = tailStart
+                    var hi = headStart
+                    while ti < tail.count && hi < head.count {
+                        if tail[ti] == head[hi] {
+                            matches += 1
+                            ti += 1
+                            hi += 1
+                        } else {
+                            break
+                        }
+                    }
+                    if matches > bestRunLength && matches >= 3 {
+                        bestRunLength = matches
+                        bestNextStart = headStart + matches
+                    }
                 }
             }
 
-            if bestOverlap > 0 {
-                let deduplicated = next.dropFirst(bestOverlap).joined(separator: " ")
+            if bestNextStart > 0 {
+                let deduplicated = nextWords.dropFirst(bestNextStart).joined(separator: " ")
                 if !deduplicated.isEmpty {
                     merged += " " + deduplicated
                 }
