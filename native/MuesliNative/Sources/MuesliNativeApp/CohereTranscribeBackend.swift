@@ -12,6 +12,7 @@ private enum CohereTranscribeConfig {
     static let int8EncoderUseCompiledOverrideEnv = "MUESLI_COHERE_INT8_ENCODER_USE_COMPILED"
 
     static let encoderPackage = "cohere_encoder_int8.mlpackage"
+    static let palettizedEncoderPackage = "cohere_encoder_dynamic_palettize6.mlpackage"
     static let dynamicEncoderPackage = "cohere_encoder_dynamic.mlpackage"
     static let prefillPackage = "cohere_decoder_prefill_int8.mlpackage"
     static let decodePackage = "cohere_decoder_decode_int8.mlpackage"
@@ -632,10 +633,20 @@ private struct CohereTranscribeModels {
         let compiledURL = directory.appendingPathComponent(resolvedPackageName.replacingOccurrences(of: ".mlpackage", with: ".mlmodelc"), isDirectory: true)
         let isInt8Encoder = packageName == CohereTranscribeConfig.encoderPackage
             && resolvedPackageName == CohereTranscribeConfig.encoderPackage
+        let isPalettizedEncoder = resolvedPackageName == CohereTranscribeConfig.palettizedEncoderPackage
 
         let effectiveConfiguration: MLModelConfiguration
         let shouldPreferCompiled: Bool
-        if isInt8Encoder {
+        if isPalettizedEncoder {
+            // Palettized encoder must run on GPU — ANE hangs with constexpr_lut_to_dense ops
+            let encoderConfig = MLModelConfiguration()
+            encoderConfig.computeUnits = .cpuAndGPU
+            effectiveConfiguration = encoderConfig
+            shouldPreferCompiled = true
+            CohereProfilingLog.write(
+                "[cohere][loadModel] palettized encoder: computeUnits=cpuAndGPU"
+            )
+        } else if isInt8Encoder {
             let overrideComputeUnits = ProcessInfo.processInfo.environment[CohereTranscribeConfig.int8EncoderComputeUnitsOverrideEnv]
                 .flatMap(cohereComputeUnits(from:))
             let overrideUseCompiled = ProcessInfo.processInfo.environment[CohereTranscribeConfig.int8EncoderUseCompiledOverrideEnv]
@@ -686,16 +697,7 @@ private struct CohereTranscribeModels {
     }
 
     private static func preferredEncoderPackageName(in directory: URL) -> String {
-        let fm = FileManager.default
-        let dynamicPackage = directory.appendingPathComponent(CohereTranscribeConfig.dynamicEncoderPackage, isDirectory: true)
-        let dynamicCompiled = directory.appendingPathComponent(
-            CohereTranscribeConfig.dynamicEncoderPackage.replacingOccurrences(of: ".mlpackage", with: ".mlmodelc"),
-            isDirectory: true
-        )
-        if fm.fileExists(atPath: dynamicPackage.path) || fm.fileExists(atPath: dynamicCompiled.path) {
-            return CohereTranscribeConfig.dynamicEncoderPackage
-        }
-        return CohereTranscribeConfig.encoderPackage
+        return CohereTranscribeConfig.dynamicEncoderPackage
     }
 }
 
