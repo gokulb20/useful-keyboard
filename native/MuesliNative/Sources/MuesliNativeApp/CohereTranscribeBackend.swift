@@ -453,6 +453,7 @@ private final class CohereSentencePieceDecoder {
             pos += 1
             if byte & 0x80 == 0 { break }
             shift += 7
+            if shift >= 64 { break } // malformed varint guard
         }
         return (result, pos)
     }
@@ -926,16 +927,19 @@ private final class CohereTranscribeManager {
                 }
             }
 
-            // Scan head of next for a trigram that exists in prev's tail
+            // Scan head of next for the earliest trigram that exists in prev's tail.
+            // Words before the anchor (0..<anchorStart) may be unique content that the
+            // previous chunk didn't capture, so we keep them.
             let headSize = min(nextWords.count, 40)
             let head = nextWords.prefix(headSize).map { normalize($0) }
-            var bestSkip = 0
+            var bestAnchorStart = -1
+            var bestRunEnd = 0
 
             if head.count >= 3 {
                 for j in 0...(head.count - 3) {
                     let key = "\(head[j])|\(head[j + 1])|\(head[j + 2])"
                     if let tailPos = trigramIndex[key] {
-                        // Found anchor — verify it extends (count consecutive matches after the trigram)
+                        // Found anchor — verify it extends
                         var run = 3
                         var ti = tailPos + 3
                         var hi = j + 3
@@ -944,19 +948,22 @@ private final class CohereTranscribeManager {
                             ti += 1
                             hi += 1
                         }
-                        // Take the match that covers the most of the head (skip the most words)
-                        let skip = j + run
-                        if skip > bestSkip {
-                            bestSkip = skip
+                        // Take the earliest anchor with a strong match (≥3 words)
+                        if bestAnchorStart < 0 {
+                            bestAnchorStart = j
+                            bestRunEnd = j + run
                         }
                     }
                 }
             }
 
-            if bestSkip > 0 {
-                let deduplicated = nextWords.dropFirst(bestSkip).joined(separator: " ")
-                if !deduplicated.isEmpty {
-                    merged += " " + deduplicated
+            if bestAnchorStart >= 0 {
+                // Keep words before the anchor (unique to this chunk) + words after the overlap
+                let preAnchor = nextWords.prefix(bestAnchorStart).joined(separator: " ")
+                let postOverlap = nextWords.dropFirst(bestRunEnd).joined(separator: " ")
+                let newContent = [preAnchor, postOverlap].filter { !$0.isEmpty }.joined(separator: " ")
+                if !newContent.isEmpty {
+                    merged += " " + newContent
                 }
             } else {
                 merged += " " + transcripts[i]
@@ -1043,6 +1050,7 @@ private final class CohereTranscribeManager {
 actor CohereTranscribeTranscriber {
     private var manager: CohereTranscribeManager?
     private var loadTask: Task<CohereTranscribeManager, Error>?
+    private var loadGeneration: Int = 0
     private var warmupTask: Task<Void, Never>?
     private var hasCompletedWarmup = false
 
@@ -1084,15 +1092,19 @@ actor CohereTranscribeTranscriber {
             return loadedManager
         }
 
+        loadGeneration += 1
+        let expectedGeneration = loadGeneration
         self.loadTask = task
         do {
             let loadedManager = try await task.value
-            // If shutdown() ran while we were loading, loadTask is nil — discard the result
-            guard self.loadTask != nil else { return }
+            // If shutdown() or a new load ran while we were loading, discard this result
+            guard self.loadGeneration == expectedGeneration else { return }
             self.manager = loadedManager
             self.loadTask = nil
         } catch {
-            self.loadTask = nil
+            if self.loadGeneration == expectedGeneration {
+                self.loadTask = nil
+            }
             throw error
         }
     }
@@ -1124,6 +1136,7 @@ actor CohereTranscribeTranscriber {
     }
 
     func shutdown() {
+        loadGeneration += 1
         loadTask?.cancel()
         loadTask = nil
         manager = nil
