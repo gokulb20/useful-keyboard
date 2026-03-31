@@ -42,6 +42,8 @@ struct ModelsView: View {
                     options: BackendOption.parakeetFamily
                 )
 
+                modelCard(option: .cohereTranscribe)
+
                 familyCard(
                     title: "Whisper",
                     subtitle: "OpenAI Whisper variants for users who prefer the classic CPU/GPU path.",
