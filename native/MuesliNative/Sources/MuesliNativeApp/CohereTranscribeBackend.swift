@@ -3,6 +3,118 @@ import Accelerate
 import FluidAudio
 import Foundation
 
+// MARK: - Testable Utilities
+
+enum CohereTranscribeUtils {
+    /// Merge transcripts from overlapping audio chunks by deduplicating shared content.
+    /// Uses hash-based trigram matching: build a dictionary of word trigrams from the
+    /// tail of chunk N, then scan the head of chunk N+1 to find where the overlap ends.
+    /// Words before the anchor are preserved as unique content.
+    static func mergeOverlappingTranscripts(_ transcripts: [String]) -> String {
+        guard transcripts.count > 1 else {
+            return transcripts.first ?? ""
+        }
+
+        var merged = transcripts[0]
+        for i in 1..<transcripts.count {
+            let prevWords = merged.split(separator: " ").map(String.init)
+            let nextWords = transcripts[i].split(separator: " ").map(String.init)
+            guard !prevWords.isEmpty, !nextWords.isEmpty else {
+                if !transcripts[i].isEmpty {
+                    merged += " " + transcripts[i]
+                }
+                continue
+            }
+
+            let normalize: (String) -> String = { $0.lowercased().filter(\.isLetter) }
+
+            let tailSize = min(prevWords.count, 40)
+            let tail = prevWords.suffix(tailSize).map { normalize($0) }
+            var trigramIndex: [String: Int] = [:]
+            if tail.count >= 3 {
+                for j in 0...(tail.count - 3) {
+                    let key = "\(tail[j])|\(tail[j + 1])|\(tail[j + 2])"
+                    trigramIndex[key] = j
+                }
+            }
+
+            let headSize = min(nextWords.count, 40)
+            let head = nextWords.prefix(headSize).map { normalize($0) }
+            var bestAnchorStart = -1
+            var bestRunEnd = 0
+
+            if head.count >= 3 {
+                for j in 0...(head.count - 3) {
+                    let key = "\(head[j])|\(head[j + 1])|\(head[j + 2])"
+                    if let tailPos = trigramIndex[key] {
+                        var run = 3
+                        var ti = tailPos + 3
+                        var hi = j + 3
+                        while ti < tail.count && hi < head.count && tail[ti] == head[hi] {
+                            run += 1
+                            ti += 1
+                            hi += 1
+                        }
+                        if bestAnchorStart < 0 {
+                            bestAnchorStart = j
+                            bestRunEnd = j + run
+                        }
+                    }
+                }
+            }
+
+            if bestAnchorStart >= 0 {
+                let preAnchor = nextWords.prefix(bestAnchorStart).joined(separator: " ")
+                let postOverlap = nextWords.dropFirst(bestRunEnd).joined(separator: " ")
+                let newContent = [preAnchor, postOverlap].filter { !$0.isEmpty }.joined(separator: " ")
+                if !newContent.isEmpty {
+                    merged += " " + newContent
+                }
+            } else {
+                merged += " " + transcripts[i]
+            }
+        }
+
+        return merged
+    }
+
+    /// Strip hallucinated tails: text after <|endoftext|> and repeated sentence fragments.
+    static func cleanTranscript(_ text: String) -> String {
+        var cleaned = text
+        if let range = cleaned.range(of: "<|endoftext|>") {
+            cleaned = String(cleaned[cleaned.startIndex..<range.lowerBound])
+        }
+        for token in ["<|nospeech|>", "<|startofcontext|>", "<|startoftranscript|>",
+                       "<|notimestamp|>", "<|nodiarize|>", "<|pnc|>", "<|noitn|>",
+                       "<|emo:undefined|>"] {
+            cleaned = cleaned.replacingOccurrences(of: token, with: "")
+        }
+        cleaned = trimRepeatedSuffix(cleaned)
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func trimRepeatedSuffix(_ text: String) -> String {
+        let sentences = text.components(separatedBy: ". ")
+        guard sentences.count >= 4 else { return text }
+
+        for i in 1..<sentences.count {
+            let current = sentences[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !current.isEmpty else { continue }
+            for j in 0..<i {
+                let earlier = sentences[j].trimmingCharacters(in: .whitespacesAndNewlines)
+                if current == earlier && i - j <= 3 {
+                    let kept = sentences[0..<i].joined(separator: ". ")
+                    if !kept.hasSuffix(".") && !kept.hasSuffix("!") && !kept.hasSuffix("?") {
+                        return kept + "."
+                    }
+                    return kept
+                }
+            }
+        }
+        return text
+    }
+}
+
 // MARK: - Configuration
 
 private enum CohereTranscribeConfig {
@@ -687,7 +799,7 @@ private final class CohereTranscribeManager {
         }
 
         let mergeStart = CFAbsoluteTimeGetCurrent()
-        let merged = Self.mergeOverlappingTranscripts(transcripts)
+        let merged = CohereTranscribeUtils.mergeOverlappingTranscripts(transcripts)
         profile.mergeMs = (CFAbsoluteTimeGetCurrent() - mergeStart) * 1000
 
         profile.melMs = totalMelMs
@@ -750,6 +862,10 @@ private final class CohereTranscribeManager {
             promptPtr[i] = id
         }
 
+        // IMPORTANT: The prefill and decode decoders share this MLState object for KV cache.
+        // Both models MUST have identical state specs (same KV cache shapes, names, and dtypes).
+        // If the CoreML models are re-exported, verify both prefill and decode state specs match
+        // — a mismatch will silently corrupt KV cache values during autoregressive decoding.
         let state = models.prefillDecoder.makeState()
         let prefillInput = try MLDictionaryFeatureProvider(dictionary: [
             "encoder_hidden": MLFeatureValue(multiArray: encoderHidden),
@@ -841,136 +957,8 @@ private final class CohereTranscribeManager {
         timing.decodeMs = (CFAbsoluteTimeGetCurrent() - decodeStart) * 1000
 
         let rawTranscript = models.tokenizer.decode(tokenIds: generatedIds)
-        let transcript = Self.cleanTranscript(rawTranscript)
+        let transcript = CohereTranscribeUtils.cleanTranscript(rawTranscript)
         return (transcript, generatedIds.count, timing)
-    }
-
-    /// Strip hallucinated tails: text after <|endoftext|> and repeated sentence fragments.
-    private static func cleanTranscript(_ text: String) -> String {
-        // Strip anything after <|endoftext|>
-        var cleaned = text
-        if let range = cleaned.range(of: "<|endoftext|>") {
-            cleaned = String(cleaned[cleaned.startIndex..<range.lowerBound])
-        }
-        // Strip other special tokens
-        for token in ["<|nospeech|>", "<|startofcontext|>", "<|startoftranscript|>",
-                       "<|notimestamp|>", "<|nodiarize|>", "<|pnc|>", "<|noitn|>",
-                       "<|emo:undefined|>"] {
-            cleaned = cleaned.replacingOccurrences(of: token, with: "")
-        }
-        // Detect and remove repeated sentence fragments.
-        // If the same sentence-ending pattern (. or , followed by space) repeats 3+ times,
-        // keep only the content up to the second occurrence.
-        cleaned = Self.trimRepeatedSuffix(cleaned)
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private static func trimRepeatedSuffix(_ text: String) -> String {
-        // Split by sentence boundaries and detect repetition
-        let sentences = text.components(separatedBy: ". ")
-        guard sentences.count >= 4 else { return text }
-
-        // Check if the last few sentences repeat
-        var uniqueEnd = sentences.count
-        for i in 1..<sentences.count {
-            let current = sentences[i].trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !current.isEmpty else { continue }
-            // Look for this sentence appearing earlier
-            for j in 0..<i {
-                let earlier = sentences[j].trimmingCharacters(in: .whitespacesAndNewlines)
-                if current == earlier && i - j <= 3 {
-                    // Found a repeat — truncate here
-                    uniqueEnd = i
-                    let kept = sentences[0..<uniqueEnd].joined(separator: ". ")
-                    // Add period if the last kept sentence doesn't end with punctuation
-                    if !kept.hasSuffix(".") && !kept.hasSuffix("!") && !kept.hasSuffix("?") {
-                        return kept + "."
-                    }
-                    return kept
-                }
-            }
-        }
-        return text
-    }
-
-    /// Merge transcripts from overlapping audio chunks by deduplicating shared content.
-    /// Uses hash-based trigram matching: build a dictionary of word trigrams from the
-    /// tail of chunk N, then scan the head of chunk N+1 to find where the overlap ends.
-    static func mergeOverlappingTranscripts(_ transcripts: [String]) -> String {
-        guard transcripts.count > 1 else {
-            return transcripts.first ?? ""
-        }
-
-        var merged = transcripts[0]
-        for i in 1..<transcripts.count {
-            let prevWords = merged.split(separator: " ").map(String.init)
-            let nextWords = transcripts[i].split(separator: " ").map(String.init)
-            guard !prevWords.isEmpty, !nextWords.isEmpty else {
-                if !transcripts[i].isEmpty {
-                    merged += " " + transcripts[i]
-                }
-                continue
-            }
-
-            let normalize: (String) -> String = { $0.lowercased().filter(\.isLetter) }
-
-            // Build trigram index from the tail of prev (last 40 words)
-            // Key: "word1|word2|word3" → value: position in prev tail
-            let tailSize = min(prevWords.count, 40)
-            let tailStart = prevWords.count - tailSize
-            let tail = prevWords.suffix(tailSize).map { normalize($0) }
-            var trigramIndex: [String: Int] = [:]
-            if tail.count >= 3 {
-                for j in 0...(tail.count - 3) {
-                    let key = "\(tail[j])|\(tail[j + 1])|\(tail[j + 2])"
-                    trigramIndex[key] = j  // last occurrence wins (prefer later matches)
-                }
-            }
-
-            // Scan head of next for the earliest trigram that exists in prev's tail.
-            // Words before the anchor (0..<anchorStart) may be unique content that the
-            // previous chunk didn't capture, so we keep them.
-            let headSize = min(nextWords.count, 40)
-            let head = nextWords.prefix(headSize).map { normalize($0) }
-            var bestAnchorStart = -1
-            var bestRunEnd = 0
-
-            if head.count >= 3 {
-                for j in 0...(head.count - 3) {
-                    let key = "\(head[j])|\(head[j + 1])|\(head[j + 2])"
-                    if let tailPos = trigramIndex[key] {
-                        // Found anchor — verify it extends
-                        var run = 3
-                        var ti = tailPos + 3
-                        var hi = j + 3
-                        while ti < tail.count && hi < head.count && tail[ti] == head[hi] {
-                            run += 1
-                            ti += 1
-                            hi += 1
-                        }
-                        // Take the earliest anchor with a strong match (≥3 words)
-                        if bestAnchorStart < 0 {
-                            bestAnchorStart = j
-                            bestRunEnd = j + run
-                        }
-                    }
-                }
-            }
-
-            if bestAnchorStart >= 0 {
-                // Keep words before the anchor (unique to this chunk) + words after the overlap
-                let preAnchor = nextWords.prefix(bestAnchorStart).joined(separator: " ")
-                let postOverlap = nextWords.dropFirst(bestRunEnd).joined(separator: " ")
-                let newContent = [preAnchor, postOverlap].filter { !$0.isEmpty }.joined(separator: " ")
-                if !newContent.isEmpty {
-                    merged += " " + newContent
-                }
-            } else {
-                merged += " " + transcripts[i]
-            }
-        }
-
-        return merged
     }
 
     private func scheduleChunks(samples: [Float]) -> [[Float]] {

@@ -65,6 +65,17 @@ struct BackendOptionTests {
         #expect(BackendOption.all.count == 9)
     }
 
+    @Test("Cohere uses cohere backend")
+    func cohereBackend() {
+        #expect(BackendOption.cohereTranscribe.backend == "cohere")
+        #expect(BackendOption.cohereTranscribe.model.contains("cohere"))
+    }
+
+    @Test("Cohere is not in experimental list")
+    func cohereNotExperimental() {
+        #expect(!BackendOption.experimental.contains(.cohereTranscribe))
+    }
+
     @Test("Whisper models reference ggml format")
     func whisperGgmlModels() {
         #expect(BackendOption.whisperSmall.model.hasPrefix("ggml-"))
