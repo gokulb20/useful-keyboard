@@ -1087,6 +1087,8 @@ actor CohereTranscribeTranscriber {
         self.loadTask = task
         do {
             let loadedManager = try await task.value
+            // If shutdown() ran while we were loading, loadTask is nil — discard the result
+            guard self.loadTask != nil else { return }
             self.manager = loadedManager
             self.loadTask = nil
         } catch {
@@ -1145,6 +1147,11 @@ actor CohereTranscribeTranscriber {
         let warmupSamples = [Float](repeating: 0, count: 16_000)
         do {
             let result = try await manager.transcribe(audioSamples: warmupSamples)
+            // If shutdown() ran while warmup was in flight, don't clobber the reset state
+            guard !Task.isCancelled else {
+                warmupTask = nil
+                return
+            }
             hasCompletedWarmup = true
             CohereProfilingLog.write(result.profile.logDescription(prefix: "[cohere][warmup]"))
             CohereProfilingLog.write("[cohere] background warmup complete")
