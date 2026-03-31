@@ -671,11 +671,11 @@ private final class CohereTranscribeManager {
         var generatedTokenCount = 0
         var totalMelMs: Double = 0
 
-        for (chunkIndex, chunkSamples) in chunks.enumerated() {
+        for chunkSamples in chunks {
             let melStart = CFAbsoluteTimeGetCurrent()
             let (chunkMel, realFrameCount) = models.melExtractor.compute(audio: chunkSamples)
             totalMelMs += (CFAbsoluteTimeGetCurrent() - melStart) * 1000
-            let result = try transcribeChunk(mel: chunkMel, realMelFrames: realFrameCount, chunkIndex: chunkIndex)
+            let result = try transcribeChunk(mel: chunkMel, realMelFrames: realFrameCount)
             if !result.transcript.isEmpty {
                 transcripts.append(result.transcript)
             }
@@ -686,7 +686,7 @@ private final class CohereTranscribeManager {
         }
 
         let mergeStart = CFAbsoluteTimeGetCurrent()
-        let merged = transcripts.joined(separator: " ")
+        let merged = Self.mergeOverlappingTranscripts(transcripts)
         profile.mergeMs = (CFAbsoluteTimeGetCurrent() - mergeStart) * 1000
 
         profile.melMs = totalMelMs
@@ -700,7 +700,7 @@ private final class CohereTranscribeManager {
         return (merged, profile)
     }
 
-    private func transcribeChunk(mel: [Float], realMelFrames: Int, chunkIndex: Int) throws -> (transcript: String, generatedTokenCount: Int, timing: CohereTimingBreakdown) {
+    private func transcribeChunk(mel: [Float], realMelFrames: Int) throws -> (transcript: String, generatedTokenCount: Int, timing: CohereTimingBreakdown) {
         var timing = CohereTimingBreakdown()
         let melLength = CohereTranscribeConfig.melLength
         let nMels = CohereTranscribeConfig.nMels
@@ -892,6 +892,50 @@ private final class CohereTranscribeManager {
         return text
     }
 
+    /// Merge transcripts from overlapping audio chunks by deduplicating shared content.
+    /// Finds the longest suffix of transcript N that matches a prefix of transcript N+1
+    /// (word-level comparison) and removes the duplicate from the next transcript.
+    static func mergeOverlappingTranscripts(_ transcripts: [String]) -> String {
+        guard transcripts.count > 1 else {
+            return transcripts.first ?? ""
+        }
+
+        var merged = transcripts[0]
+        for i in 1..<transcripts.count {
+            let prev = merged.split(separator: " ").map(String.init)
+            let next = transcripts[i].split(separator: " ").map(String.init)
+            guard !prev.isEmpty, !next.isEmpty else {
+                if !transcripts[i].isEmpty {
+                    merged += " " + transcripts[i]
+                }
+                continue
+            }
+
+            // Find longest suffix of prev that matches a prefix of next
+            // Check up to 30 words (5s overlap ≈ 25-35 words at ~6 words/s)
+            let maxCheck = min(prev.count, next.count, 30)
+            var bestOverlap = 0
+            for length in 1...maxCheck {
+                let suffix = prev.suffix(length)
+                let prefix = next.prefix(length)
+                if Array(suffix).map({ $0.lowercased() }) == Array(prefix).map({ $0.lowercased() }) {
+                    bestOverlap = length
+                }
+            }
+
+            if bestOverlap > 0 {
+                let deduplicated = next.dropFirst(bestOverlap).joined(separator: " ")
+                if !deduplicated.isEmpty {
+                    merged += " " + deduplicated
+                }
+            } else {
+                merged += " " + transcripts[i]
+            }
+        }
+
+        return merged
+    }
+
     private func scheduleChunks(samples: [Float]) -> [[Float]] {
         let maxSamples = CohereTranscribeConfig.maxAudioSamples
         if samples.count <= maxSamples {
@@ -954,7 +998,9 @@ private final class CohereTranscribeManager {
         let array = try MLMultiArray(shape: [1, NSNumber(value: CohereTranscribeConfig.maxSeqLen)], dataType: .float32)
         let ptr = array.dataPointer.bindMemory(to: Float.self, capacity: CohereTranscribeConfig.maxSeqLen)
         ptr.initialize(repeating: 0, count: CohereTranscribeConfig.maxSeqLen)
-        for index in 0...lastValidPosition {
+        // Mark only already-written positions as valid (0..<lastValidPosition),
+        // not the current write position which hasn't been committed to KV cache yet
+        for index in 0..<lastValidPosition {
             ptr[index] = 1
         }
         return array
