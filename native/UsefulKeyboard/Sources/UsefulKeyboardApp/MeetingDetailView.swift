@@ -49,6 +49,9 @@ struct MeetingDetailView: View {
                         .background(Theme.surfaceBorder)
 
                     content(for: meeting)
+
+                    // Bottom action bar (Granola-style)
+                    bottomBar(for: meeting)
                 }
                 .background(Theme.backgroundBase)
                 .onChange(of: meeting.id) { _, _ in
@@ -92,31 +95,19 @@ struct MeetingDetailView: View {
     @ViewBuilder
     private func header(_ meeting: MeetingRecord) -> some View {
         let appliedTemplate = controller.meetingTemplateSnapshot(for: meeting)
-        VStack(alignment: .leading, spacing: Theme.spacing16) {
-            // Top toolbar
-            HStack {
-                if let onBack {
-                    Button(action: onBack) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 10, weight: .semibold))
-                            Image(systemName: "house")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundStyle(Theme.textTertiary)
+        VStack(alignment: .leading, spacing: Theme.spacing12) {
+            // Minimal back button
+            if let onBack {
+                Button(action: onBack) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "house")
+                            .font(.system(size: 11))
                     }
-                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.textTertiary)
                 }
-
-                Spacer()
-
-                HStack(spacing: Theme.spacing8) {
-                    documentModePicker
-                    templateMenu(for: meeting, appliedTemplate: appliedTemplate)
-                    summaryAction(for: meeting)
-                    editButton(for: meeting)
-                    deleteButton
-                }
+                .buttonStyle(.plain)
             }
 
             // Title
@@ -131,13 +122,10 @@ struct MeetingDetailView: View {
                     debounceSaveTitle(meetingID: meeting.id)
                 }
 
-            // Metadata chips (Granola-style)
+            // Metadata chips
             HStack(spacing: Theme.spacing8) {
                 metadataChip(icon: "calendar", text: formatDateChip(meeting.startTime))
                 metadataChip(icon: "clock", text: formatDurationChip(meeting.durationSeconds))
-                if meeting.wordCount > 0 {
-                    metadataChip(icon: "text.word.spacing", text: "\(meeting.wordCount) words")
-                }
                 templateChip(for: appliedTemplate)
             }
 
@@ -179,6 +167,50 @@ struct MeetingDetailView: View {
         let m = Int(seconds) / 60
         if m >= 60 { return "\(m / 60)h \(m % 60)m" }
         return "\(m)m"
+    }
+
+    @ViewBuilder
+    private func bottomBar(for meeting: MeetingRecord) -> some View {
+        let appliedTemplate = controller.meetingTemplateSnapshot(for: meeting)
+        HStack(spacing: Theme.spacing12) {
+            // Notes/Transcript toggle
+            documentModePicker
+
+            Spacer()
+
+            // Context actions
+            if isRawTranscript(meeting) {
+                summaryAction(for: meeting)
+            }
+
+            editButton(for: meeting)
+
+            Menu {
+                templateMenu(for: meeting, appliedTemplate: appliedTemplate)
+                recordingAction(for: meeting)
+                Divider()
+                Button(role: .destructive) {
+                    showDeleteConfirmation = true
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+        .padding(.horizontal, 40)
+        .padding(.vertical, 10)
+        .background(Theme.backgroundBase)
+        .overlay(alignment: .top) {
+            Divider().background(Theme.surfaceBorder)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder

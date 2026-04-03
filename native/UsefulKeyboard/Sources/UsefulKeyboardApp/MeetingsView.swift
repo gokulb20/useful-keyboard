@@ -305,40 +305,33 @@ struct MeetingsView: View {
 
     @ViewBuilder
     private var browserHeader: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(currentFolderName)
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
-            }
+        HStack(alignment: .center) {
+            Text(currentFolderName)
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
 
             Spacer()
 
-            HStack(spacing: Theme.spacing8) {
-                sortButton
-                dateFilterButton
-
-                Button {
-                    controller.createQuickNote()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Quick note")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Theme.surfacePrimary)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cornerSmall)
-                            .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
-                    )
+            Button {
+                controller.createQuickNote()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Quick note")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Theme.surfacePrimary)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.cornerSmall)
+                        .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
+                )
             }
+            .buttonStyle(.plain)
         }
     }
 
