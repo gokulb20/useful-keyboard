@@ -231,6 +231,7 @@ final class MuesliController: NSObject {
         micActivityMonitor.onMeetingDetected = { [weak self] detection in
             guard let self,
                   !self.isMeetingRecording(),
+                  !self.isStartingMeetingRecording,
                   self.config.showMeetingDetectionNotification else { return }
             let title = detection.meetingTitle ?? detection.appName
             self.meetingNotification.show(
@@ -850,6 +851,8 @@ final class MuesliController: NSObject {
         }
         let meetingContext = config.enableContextDetection ? contextEngine.snapshot() : nil
 
+        meetingNotification.close()
+        micActivityMonitor.suppressWhileActive()
         let meetingSession = MeetingSession(
             title: title,
             calendarEventID: nil,
@@ -876,6 +879,7 @@ final class MuesliController: NSObject {
                 self.statusBarController?.refresh()
             } catch {
                 fputs("[muesli-native] failed to start meeting: \(error)\n", stderr)
+                self.micActivityMonitor.resumeAfterCooldown()
                 self.statusBarController?.setStatus("Idle")
                 self.statusBarController?.refresh()
                 self.setState(.idle)
@@ -912,7 +916,13 @@ final class MuesliController: NSObject {
     func stopMeetingRecording() {
         guard let activeMeetingSession else { return }
         indicator.setMeetingRecording(false, config: config)
+        indicator.setTranscribingTitle("Transcribing", config: config)
         setState(.transcribing)
+        activeMeetingSession.onProgress = { [weak self] stage in
+            Task { @MainActor [weak self] in
+                self?.setMeetingProcessingStage(stage)
+            }
+        }
         Task { [weak self] in
             guard let self else { return }
             var meetingTitle = "Meeting"
@@ -926,6 +936,9 @@ final class MuesliController: NSObject {
                 let result = try await activeMeetingSession.stop()
                 meetingResult = result
                 meetingTitle = result.title
+                await MainActor.run {
+                    self.setMeetingProcessingStatus("Finalizing")
+                }
                 let persistenceResult = try self.persistCompletedMeetingResult(result)
                 if let recordingSaveError = persistenceResult.recordingSaveError {
                     self.presentErrorAlert(title: "Meeting Recording", message: recordingSaveError.localizedDescription)
@@ -1138,6 +1151,25 @@ final class MuesliController: NSObject {
         }
         statusBarController?.setStatus(status)
         indicator.setState(state, config: config)
+    }
+
+    @MainActor
+    private func setMeetingProcessingStage(_ stage: MeetingProcessingStage) {
+        switch stage {
+        case .transcribingAudio:
+            setMeetingProcessingStatus("Transcribing")
+        case .generatingTitle:
+            setMeetingProcessingStatus("Generating Title")
+        case .summarizingNotes:
+            setMeetingProcessingStatus("Summarizing")
+        }
+    }
+
+    @MainActor
+    private func setMeetingProcessingStatus(_ status: String) {
+        statusBarController?.setStatus(status)
+        statusBarController?.refresh()
+        indicator.setTranscribingTitle(status, config: config)
     }
 
     private func handlePrepare() {
