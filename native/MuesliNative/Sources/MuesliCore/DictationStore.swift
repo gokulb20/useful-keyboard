@@ -94,6 +94,14 @@ public final class DictationStore {
             // Column may already exist.
         }
         let _ = sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_meetings_folder ON meetings(folder_id)", nil, nil, nil)
+
+        // Context detection columns (stores serialized AppContext as JSON)
+        if sqlite3_exec(db, "ALTER TABLE dictations ADD COLUMN context_json TEXT", nil, nil, nil) != SQLITE_OK {
+            // Column may already exist.
+        }
+        if sqlite3_exec(db, "ALTER TABLE meetings ADD COLUMN context_json TEXT", nil, nil, nil) != SQLITE_OK {
+            // Column may already exist.
+        }
     }
 
     public func insertDictation(
@@ -101,15 +109,16 @@ public final class DictationStore {
         durationSeconds: Double,
         appContext: String = "",
         startedAt: Date,
-        endedAt: Date
+        endedAt: Date,
+        contextJSON: String? = nil
     ) throws {
         let db = try openDatabase()
         defer { sqlite3_close(db) }
 
         let sql = """
         INSERT INTO dictations
-        (timestamp, duration_seconds, raw_text, app_context, word_count, source, started_at, ended_at)
-        VALUES (?, ?, ?, ?, ?, 'dictation', ?, ?)
+        (timestamp, duration_seconds, raw_text, app_context, word_count, source, started_at, ended_at, context_json)
+        VALUES (?, ?, ?, ?, ?, 'dictation', ?, ?, ?)
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -127,6 +136,7 @@ public final class DictationStore {
         sqlite3_bind_int(statement, 5, Int32(Self.countWords(in: text)))
         sqlite3_bind_text(statement, 6, (started as NSString).utf8String, -1, nil)
         sqlite3_bind_text(statement, 7, (ended as NSString).utf8String, -1, nil)
+        bindOptionalText(contextJSON, at: 8, statement: statement)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw lastError(db)
@@ -293,15 +303,16 @@ public final class DictationStore {
         selectedTemplateID: String? = nil,
         selectedTemplateName: String? = nil,
         selectedTemplateKind: MeetingTemplateKind? = nil,
-        selectedTemplatePrompt: String? = nil
+        selectedTemplatePrompt: String? = nil,
+        contextJSON: String? = nil
     ) throws -> Int64 {
         let db = try openDatabase()
         defer { sqlite3_close(db) }
 
         let sql = """
         INSERT INTO meetings
-        (title, calendar_event_id, start_time, end_time, duration_seconds, raw_transcript, formatted_notes, mic_audio_path, system_audio_path, saved_recording_path, word_count, selected_template_id, selected_template_name, selected_template_kind, selected_template_prompt, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'meeting')
+        (title, calendar_event_id, start_time, end_time, duration_seconds, raw_transcript, formatted_notes, mic_audio_path, system_audio_path, saved_recording_path, word_count, selected_template_id, selected_template_name, selected_template_kind, selected_template_prompt, source, context_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'meeting', ?)
         """
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -330,6 +341,7 @@ public final class DictationStore {
         bindOptionalText(selectedTemplateName, at: 13, statement: statement)
         bindOptionalText(selectedTemplateKind?.rawValue, at: 14, statement: statement)
         bindOptionalText(selectedTemplatePrompt, at: 15, statement: statement)
+        bindOptionalText(contextJSON, at: 16, statement: statement)
 
         guard sqlite3_step(statement) == SQLITE_DONE else {
             throw lastError(db)

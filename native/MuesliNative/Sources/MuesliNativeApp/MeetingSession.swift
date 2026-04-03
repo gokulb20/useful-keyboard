@@ -66,6 +66,7 @@ struct MeetingSessionResult {
     let retainedRecordingError: Error?
     let systemRecordingURL: URL?
     let templateSnapshot: MeetingTemplateSnapshot
+    let contextJSON: String?
 }
 
 final class MeetingSession {
@@ -75,6 +76,8 @@ final class MeetingSession {
     private let runtime: RuntimePaths
     private let config: AppConfig
     private let transcriptionCoordinator: TranscriptionCoordinator
+    /// Context snapshot captured at meeting start.
+    let initialContext: AppContext?
     private let systemAudioRecorder = SystemAudioRecorder()
 
     /// Streaming mic recorder with real-time buffer access (AVAudioEngine)
@@ -101,7 +104,8 @@ final class MeetingSession {
         backend: BackendOption,
         runtime: RuntimePaths,
         config: AppConfig,
-        transcriptionCoordinator: TranscriptionCoordinator
+        transcriptionCoordinator: TranscriptionCoordinator,
+        initialContext: AppContext? = nil
     ) {
         self.title = title
         self.calendarEventID = calendarEventID
@@ -109,6 +113,7 @@ final class MeetingSession {
         self.runtime = runtime
         self.config = config
         self.transcriptionCoordinator = transcriptionCoordinator
+        self.initialContext = initialContext
     }
 
     private var serializedCustomWords: [[String: Any]] {
@@ -279,6 +284,16 @@ final class MeetingSession {
                 template: templateSnapshot
             )
 
+            // Serialize initial context to JSON for persistence
+            var contextJSONString: String?
+            if let ctx = initialContext {
+                let encoder = JSONEncoder()
+                encoder.dateEncodingStrategy = .iso8601
+                if let data = try? encoder.encode(ctx) {
+                    contextJSONString = String(data: data, encoding: .utf8)
+                }
+            }
+
             return MeetingSessionResult(
                 title: generatedTitle,
                 calendarEventID: calendarEventID,
@@ -290,7 +305,8 @@ final class MeetingSession {
                 retainedRecordingURL: retainedRecordingURL,
                 retainedRecordingError: retainedRecordingWriterError,
                 systemRecordingURL: systemAudioURL,
-                templateSnapshot: templateSnapshot
+                templateSnapshot: templateSnapshot,
+                contextJSON: contextJSONString
             )
         } catch {
             if let lastMicURL {

@@ -81,6 +81,9 @@ final class MuesliController: NSObject {
     private let calendarMonitor = CalendarMonitor()
     private let micActivityMonitor = MicActivityMonitor()
     private let meetingNotification = MeetingNotificationController()
+    let contextEngine = ContextEngine()
+    private let activeAppProvider = ActiveAppProvider()
+    private let contentClassifier = ContentClassifier()
 
     private let chatGPTAuth = ChatGPTAuthManager.shared
 
@@ -176,6 +179,10 @@ final class MuesliController: NSObject {
             else { return }
             Task { @MainActor [weak self] in
                 self?.lastExternalApp = app
+                self?.activeAppProvider.update(from: app)
+                if let appCtx = self?.activeAppProvider.currentApp {
+                    self?.contextEngine.updateActiveApp(appCtx)
+                }
             }
         }
         dataDidChangeObserver = DistributedNotificationCenter.default().addObserver(
@@ -199,6 +206,11 @@ final class MuesliController: NSObject {
             self?.handleUpcomingMeeting(event)
         }
         calendarMonitor.start()
+
+        // Configure context engine from persisted config
+        contextEngine.setProfiles(config.contextProfiles)
+        contextEngine.setRules(config.contextRules)
+        contentClassifier.setModel(config.ollamaModel)
 
         micActivityMonitor.calendarEventProvider = { [weak self] in
             self?.calendarMonitor.currentOrNearbyEvent()
@@ -815,13 +827,22 @@ final class MuesliController: NSObject {
     func startMeetingRecording(title: String = "Meeting") {
         guard !isMeetingRecording(), !isStartingMeetingRecording else { return }
         isStartingMeetingRecording = true
+        // Snapshot context for meeting start
+        if config.enableContextDetection {
+            if let calCtx = calendarMonitor.currentOrNearbyRichEvent() {
+                contextEngine.updateCalendarEvent(calCtx)
+            }
+        }
+        let meetingContext = config.enableContextDetection ? contextEngine.snapshot() : nil
+
         let meetingSession = MeetingSession(
             title: title,
             calendarEventID: nil,
             backend: selectedBackend,
             runtime: runtime,
             config: config,
-            transcriptionCoordinator: transcriptionCoordinator
+            transcriptionCoordinator: transcriptionCoordinator,
+            initialContext: meetingContext
         )
         statusBarController?.setStatus("Starting meeting: \(title)")
         statusBarController?.refresh()
@@ -949,7 +970,8 @@ final class MuesliController: NSObject {
             selectedTemplateID: result.templateSnapshot.id,
             selectedTemplateName: result.templateSnapshot.name,
             selectedTemplateKind: result.templateSnapshot.kind,
-            selectedTemplatePrompt: result.templateSnapshot.prompt
+            selectedTemplatePrompt: result.templateSnapshot.prompt,
+            contextJSON: result.contextJSON
         )
 
         do {
@@ -1129,6 +1151,16 @@ final class MuesliController: NSObject {
         fputs("[muesli-native] recording start\n", stderr)
         micActivityMonitor.suppressWhileActive()
 
+        // Snapshot context at dictation start (point-in-time)
+        if config.enableContextDetection {
+            if let appCtx = activeAppProvider.snapshot() {
+                contextEngine.updateActiveApp(appCtx)
+            }
+            if let calCtx = calendarMonitor.currentOrNearbyRichEvent() {
+                contextEngine.updateCalendarEvent(calCtx)
+            }
+        }
+
         do {
             try recorder.start()
             dictationStartedAt = Date()
@@ -1253,7 +1285,8 @@ final class MuesliController: NSObject {
                     text: cleaned,
                     durationSeconds: duration,
                     startedAt: startedAt,
-                    endedAt: Date()
+                    endedAt: Date(),
+                    contextJSON: serializedContextJSON()
                 )
             }
 
@@ -1304,7 +1337,8 @@ final class MuesliController: NSObject {
                     text: text,
                     durationSeconds: duration,
                     startedAt: startedAt,
-                    endedAt: Date()
+                    endedAt: Date(),
+                    contextJSON: self.serializedContextJSON()
                 )
                 await MainActor.run {
                     self.statusBarController?.refresh()
@@ -1332,6 +1366,17 @@ final class MuesliController: NSObject {
         if config.autoRecordMeetings, !isMeetingRecording() {
             startMeetingRecording(title: event.title)
         }
+    }
+
+    /// Serialize the current context snapshot to JSON for storage.
+    func serializedContextJSON() -> String? {
+        guard config.enableContextDetection else { return nil }
+        let ctx = contextEngine.snapshot()
+        guard ctx != .empty else { return nil }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(ctx) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     func serializedCustomWords() -> [[String: Any]] {

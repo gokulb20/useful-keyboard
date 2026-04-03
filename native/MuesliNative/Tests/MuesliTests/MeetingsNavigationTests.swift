@@ -175,7 +175,8 @@ struct MeetingsNavigationTests {
             retainedRecordingURL: invalidRecordingURL,
             retainedRecordingError: nil,
             systemRecordingURL: nil,
-            templateSnapshot: MeetingTemplates.auto.snapshot
+            templateSnapshot: MeetingTemplates.auto.snapshot,
+            contextJSON: nil
         )
 
         let persistenceResult = try controller.persistCompletedMeetingResult(result)
