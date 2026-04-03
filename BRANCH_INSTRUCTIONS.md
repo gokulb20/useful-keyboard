@@ -1,149 +1,236 @@
-# Branch: feature/branding
+# Branch: feature/context-detection
 
 Read AGENTS.md first for repo context.
 
 ## Goal
 
-Rebrand the app from "Muesli" to "Useful Keyboard" and apply a strict minimal design language: black background, white text, no emojis, simple or no icons, very minimal, natural navigation.
+Before calling Ollama for AI formatting, detect what app the user is dictating into and pass that context to the formatter so it formats appropriately (email style for Mail, casual for Messages, etc.). Also show the detected context as a badge on the floating indicator pill.
 
-## Design Language
+## Dependency
 
-- **Background**: Pure black (#000000) or near-black (#0A0A0A). The current theme uses #111214 — make it darker.
-- **Text**: White at 90%+ opacity for primary, 60% for secondary, 35% for tertiary. No colored text except for interactive elements.
-- **Accent**: Keep the blue accent (#6BA3F7 dark mode) but use it sparingly — only for active selections and interactive controls.
-- **No emojis**: The codebase currently has no emoji in UI strings (good). Keep it that way. Remove any emoji-like SF Symbols if they feel decorative.
-- **Icons**: Use SF Symbols only where they serve a functional purpose (e.g., mic icon when recording). Remove decorative icons. The sidebar nav items can be text-only if it looks cleaner.
-- **Typography**: Keep the Inter font (AppFonts.swift). Clean, sans-serif, minimal.
-- **Spacing**: Keep the existing 4pt grid from MuesliTheme.
+**This branch depends on `feature/ollama-formatting` being merged first.**
 
-## Specific Tasks
+Before starting, confirm that `OllamaFormatter.swift` exists in `Sources/MuesliNativeApp/`. If it does not exist, stop and report that the dependency branch has not been merged.
 
-### 1. Rename User-Facing Strings
+Also confirm that `MuesliController.swift` has the Ollama formatting integration (a call to `OllamaFormatter.format()` before `PasteController.paste()`).
 
-These are the exact locations where "Muesli" appears in user-facing text:
+## New File: ContextDetector.swift
 
-| File | Line | Current String | Change To |
-|---|---|---|---|
-| `Sources/MuesliNativeApp/AppIdentity.swift` | 5 | `private static let defaultName = "Muesli"` | `"Useful Keyboard"` |
-| `Sources/MuesliNativeApp/OnboardingView.swift` | 164 | `"Welcome to Muesli"` | `"Welcome to Useful Keyboard"` |
-| `Sources/MuesliNativeApp/OnboardingView.swift` | 277 | `"Muesli needs a few macOS permissions to work properly..."` | `"Useful Keyboard needs a few macOS permissions to work properly..."` |
-| `Sources/MuesliNativeApp/OnboardingWindowController.swift` | 34 | `window.title = "Welcome to Muesli"` | `"Welcome to Useful Keyboard"` |
-| `Sources/MuesliNativeApp/SidebarView.swift` | 78 | `"muesli"` (sidebar logo text) | `"useful keyboard"` or just `"keyboard"` |
-| `Sources/MuesliNativeApp/StatusBarController.swift` | 51 | Uses `AppIdentity.displayName` | Already dynamic, will update via AppIdentity |
+Create `native/MuesliNative/Sources/MuesliNativeApp/ContextDetector.swift`:
 
-Also grep for any other user-facing "Muesli" or "muesli" strings across all `.swift` files in `Sources/MuesliNativeApp/`. Only change user-facing strings (UI labels, window titles, alert text, onboarding copy). Do NOT rename Swift types, module names, variable names, or internal identifiers.
+```swift
+import AppKit
 
-### 2. Update Build Script Bundle ID
+enum ContextDetector {
 
-The build script `scripts/build_native_app.sh` generates Info.plist at build time using env vars. The defaults are hardcoded in the script:
+    /// Detects the frontmost app and returns a context label for AI formatting.
+    /// Returns one of: "email", "imessage", "notes", "ai-prompt", "general"
+    static func detectContext() -> String {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let bundleID = frontApp.bundleIdentifier else {
+            return "general"
+        }
 
-| Variable | Current Default | Change To |
-|---|---|---|
-| `APP_NAME` (line ~12) | `Muesli` | `Useful Keyboard` |
-| `APP_DISPLAY_NAME` (line ~13) | `$APP_NAME` | Keep as-is (inherits) |
-| `APP_BUNDLE_NAME` (line ~14) | `$APP_NAME.app` | Keep as-is (becomes `Useful Keyboard.app`) |
-| `APP_EXECUTABLE_NAME` (line ~15) | `Muesli` | `Useful Keyboard` |
-| `BUNDLE_ID` (line ~17) | `com.muesli.app` | `ai.useful.keyboard` |
+        let id = bundleID.lowercased()
 
-The script uses env var overrides (`MUESLI_APP_NAME`, `MUESLI_BUNDLE_ID`, etc.) — change the defaults in the script itself so it works without env vars.
+        // Email clients
+        if id == "com.apple.mail" ||
+           id.contains("mimestream") ||
+           id.contains("microsoft.outlook") ||
+           id.contains("readdle.sparkdesktop") ||
+           id.contains("google.gmail") ||
+           id.contains("superhuman") {
+            return "email"
+        }
 
-### 3. Update Theme Colors (MuesliTheme.swift)
+        // iMessage / Messages
+        if id == "com.apple.mobilesms" {
+            return "imessage"
+        }
 
-File: `Sources/MuesliNativeApp/MuesliTheme.swift`
+        // Chat apps (casual like iMessage)
+        if id.contains("slack") ||
+           id.contains("microsoft.teams") ||
+           id.contains("discord") ||
+           id.contains("telegram") ||
+           id.contains("whatsapp") {
+            return "imessage"
+        }
 
-Make the dark mode deeper/blacker:
+        // Notes apps
+        if id == "com.apple.notes" ||
+           id.contains("notion") ||
+           id.contains("obsidian") ||
+           id.contains("bear") {
+            return "notes"
+        }
 
-| Token | Current Value | New Value |
-|---|---|---|
-| `backgroundDeep` (dark) | `0x111214` | `0x000000` or `0x050505` |
-| `backgroundBase` (dark) | `0x161719` | `0x0A0A0A` |
-| `backgroundRaised` (dark) | `0x1C1D20` | `0x111111` |
-| `backgroundHover` (dark) | `0x232528` | `0x1A1A1A` |
-| `surfacePrimary` (dark) | `0x262830` | `0x1E1E1E` |
-| `surfaceSelected` (dark) | `0x2E3340` | `0x252525` |
+        // Browsers and AI apps (likely writing prompts)
+        if id.contains("safari") ||
+           id.contains("chrome") ||
+           id.contains("firefox") ||
+           id.contains("arc") ||
+           id.contains("anthropic") ||
+           id.contains("openai") {
+            return "ai-prompt"
+        }
 
-Keep the text opacity levels as they are (92%, 62%, 40% white). Keep the accent blue.
+        // Code editors (clean, precise)
+        if id.contains("xcode") ||
+           id.contains("vscode") ||
+           id.contains("visual studio") ||
+           id.contains("cursor") ||
+           id.contains("jetbrains") {
+            return "ai-prompt"
+        }
 
-Remove light mode support or keep it but don't optimize for it — this app is dark-mode-only per the user's design intent.
+        return "general"
+    }
+}
+```
 
-### 4. Simplify the Sidebar (SidebarView.swift)
+Design decisions:
+- `enum` not `struct` — no instances, all static
+- Lowercase the bundle ID for case-insensitive matching
+- Chat apps (Slack, Teams, Discord) map to `"imessage"` for casual formatting
+- Browsers map to `"ai-prompt"` — the most common dictation target in browsers is Claude/ChatGPT
+- Code editors also map to `"ai-prompt"` — you're likely dictating a prompt or comment
+- Returns `"general"` as the safe default
 
-Current sidebar has these items with SF Symbol icons:
-- Dictations (mic.fill)
-- Meetings (person.2.fill) with folder tree
-- Dictionary (character.book.closed)
-- Models (square.and.arrow.down)
-- Shortcuts (keyboard)
-- Settings (gearshape)
-- About (info.circle)
+## Integration: MuesliController.swift
 
-Changes:
-- Replace the MWaveformIcon logo (22x22) with simple text: "useful keyboard" in the theme's title font, white, no icon
-- Consider removing SF Symbol icons from nav items and using text-only labels. If icons are kept, use the simplest possible SF Symbols.
-- The greeting "Hi, {name}" below the logo can stay — it's a nice personal touch
-- Navigation should feel like a clean list, not a toolbar
+Find where `OllamaFormatter.format()` is called (added by the ollama-formatting branch). It currently passes `context: "general"` (the default). Change it to:
 
-### 5. Simplify Onboarding (OnboardingView.swift)
+```swift
+let context = ContextDetector.detectContext()
+let finalText = await OllamaFormatter.format(
+    transcript: text,
+    context: context,
+    model: self.appState.config.ollamaModel
+)
+```
 
-Current onboarding has 5 steps with the MWaveformIcon (80x48).
+The `ContextDetector.detectContext()` call must happen on the main thread (NSWorkspace requires it). Since `handleStop()` is already in a `MainActor.run` block, this should work. But verify — if the Ollama call was moved outside the MainActor block, you'll need to capture the context first:
 
-Changes:
-- Replace MWaveformIcon with simple text: "Useful Keyboard" in large bold white text
-- Keep the 5 steps but make them feel cleaner
-- Step 1 subtitle: change `"Local-first dictation and meeting transcription for macOS"` to something like `"Voice in, text out."` or keep it but make it concise
-- Remove any decorative elements
-- Keep the dark background (#000000 or near-black)
+```swift
+// On main thread:
+let context = ContextDetector.detectContext()
+// Then async (can be off main):
+let finalText = await OllamaFormatter.format(transcript: text, context: context, model: ...)
+// Back on main for paste:
+PasteController.paste(text: finalText)
+```
 
-### 6. Update Menu Bar Icon
+## Floating Indicator Badge
 
-Current: `assets/menu_m_template.png` (an M-shaped waveform)
+File: `Sources/MuesliNativeApp/FloatingIndicatorController.swift`
 
-Create a simple replacement:
-- A minimal "K" letterform or a simple microphone silhouette as a template image
-- Must be a template image (white on transparent, macOS inverts for light menu bars)
-- 18x18 logical pixels, provide @1x and @2x versions
-- Name: `menu_icon_template.png` and `menu_icon_template@2x.png`
+The floating indicator is an `NSPanel` with custom `NSView` subclass (`HoverIndicatorView`). It has states: idle, recording, transcribing.
 
-Update `RuntimePaths.swift` (lines 14-15) to reference the new filename.
-Update `scripts/build_native_app.sh` to copy the new icon file (currently copies `menu_m_template.png`).
+Add a context badge that shows during recording:
 
-### 7. App Icon
+### Where to add it
 
-Current: `assets/muesli.icns` and `assets/muesli_app_icon.png`
+The indicator has these layers/subviews:
+- `iconLabel` (NSTextField) — shows state icon
+- `textLabel` (NSTextField) — shows state text on hover
+- Waveform bars (CALayers) — shows during recording
 
-Create a minimal placeholder:
-- Black rounded square with "UK" in white, centered
-- Or a simple white keyboard/microphone glyph on black
-- Generate as `useful_keyboard.icns` and `useful_keyboard_app_icon.png`
-- Update the build script's `CFBundleIconFile` reference and the `cp` command for the icon
+Add a new `NSTextField` for the context badge:
 
-### 8. Remove MWaveformIcon Usage
+```swift
+private var contextLabel: NSTextField?
+```
 
-File: `Sources/MuesliNativeApp/MWaveformIcon.swift`
+### When to show it
 
-This is the custom "M" logo component. After replacing its usage in SidebarView and OnboardingView with text, you can either:
-- Delete the file entirely if nothing references it
-- Or keep it for the floating indicator waveform (check if FloatingIndicatorController uses it)
+When recording starts (state changes to `.recording`), call `ContextDetector.detectContext()` and set the badge text. The state transitions happen via `setState()` method.
 
-Note: FloatingIndicatorController.swift has its own waveform rendering (CALayer bars, not MWaveformIcon). So MWaveformIcon may be safe to remove entirely.
+In the `.recording` state setup:
+1. Create or update the context label
+2. Set its string value to the detected context (e.g., "email", "notes", "general")
+3. Position it at the trailing edge of the pill, or below the waveform
 
-### 9. StatsHeaderView.swift Simplification
+### Styling
 
-Current: 4 stat cards with colored SF Symbol icons (flame.fill orange, character.cursor.ibeam blue, gauge green, person.2.fill blue)
+- Font: 10pt system font, medium weight
+- Color: white at 50% opacity (subtle, not distracting)
+- No background — just floating text
+- Position: right side of the pill, vertically centered, or as a small tag below
 
-Changes:
-- Remove colored icons or make them white/gray
-- Keep the stat numbers and labels
-- Make it feel like a clean data dashboard, not gamified
+### When to hide it
+
+When recording stops (state changes away from `.recording`), hide or remove the context label.
+
+### Implementation sketch
+
+In `FloatingIndicatorController`:
+
+```swift
+// Add property
+private var contextBadge: NSTextField?
+
+// In the method that sets up the recording state:
+func updateContextBadge(_ context: String) {
+    if contextBadge == nil {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 10, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.5)
+        label.backgroundColor = .clear
+        label.isBezeled = false
+        label.isEditable = false
+        contentView.addSubview(label)
+        contextBadge = label
+    }
+    contextBadge?.stringValue = context
+    contextBadge?.sizeToFit()
+    // Position at right edge of pill
+    // ...
+}
+
+// When recording starts:
+let context = ContextDetector.detectContext()
+updateContextBadge(context)
+
+// When recording stops:
+contextBadge?.isHidden = true
+```
+
+Look at how the existing `iconLabel` and `textLabel` are positioned and follow the same pattern for layout.
+
+### Where recording state is triggered
+
+The FloatingIndicatorController's state is set from MuesliController. Look for calls like:
+```swift
+self.indicator.setState(.recording, config: self.config)
+```
+
+The context detection should happen at the same time as this state change. Either:
+- Add a parameter to setState: `setState(.recording, context: "email", config: ...)`
+- Or call a separate method: `self.indicator.updateContextBadge(ContextDetector.detectContext())`
+
+## Files to Create
+
+| File | Purpose |
+|---|---|
+| `Sources/MuesliNativeApp/ContextDetector.swift` | Frontmost app detection and context mapping |
+
+## Files to Modify
+
+| File | What Changes |
+|---|---|
+| `Sources/MuesliNativeApp/MuesliController.swift` | Pass detected context to OllamaFormatter.format() |
+| `Sources/MuesliNativeApp/FloatingIndicatorController.swift` | Add context badge display during recording |
 
 ## Files NOT to Touch
 
-- Anything in `Sources/MuesliCore/` (storage layer)
-- `Sources/MuesliCLI/` (CLI stays as muesli-cli)
-- Audio/transcription files: StreamingMicRecorder, MicrophoneRecorder, SystemAudioRecorder, FluidAudioBackend, WhisperCppBackend, NemotronStreamingBackend, TranscriptionRuntime, FillerWordFilter, CustomWordMatcher
-- Meeting logic: MeetingSession, MeetingDetector, MeetingSummaryClient, CalendarMonitor
-- PasteController.swift, HotkeyMonitor.swift, StreamingDictationController.swift
-- Package.swift (no dependency changes)
+- `Sources/MuesliCore/` (storage)
+- `Sources/MuesliCLI/` (CLI)
+- Audio/transcription code
+- `OllamaFormatter.swift` (do NOT modify — only call it with the context parameter it already accepts)
+- Meeting code, CloudKit code
+- Package.swift, build scripts
+- SettingsView (no new settings needed for context detection)
 
 ## Verification
 
@@ -152,4 +239,14 @@ swift build --package-path native/MuesliNative
 swift test --package-path native/MuesliNative
 ```
 
-Both must pass. Do not modify any test files unless a test explicitly asserts on the string "Muesli" in a user-facing context (update those to "Useful Keyboard").
+Both must pass. Do not modify any existing tests.
+
+## Testing Checklist (manual, after build)
+
+When testing the built app:
+1. Open Apple Mail, compose email, dictate — should format as email, pill shows "email"
+2. Open Messages, dictate — casual format, pill shows "imessage"  
+3. Open Notes, dictate — clean notes, pill shows "notes"
+4. Open Safari (navigate to claude.ai), dictate — precise format, pill shows "ai-prompt"
+5. Open TextEdit, dictate — general format, pill shows "general"
+6. Open Slack, dictate — casual format, pill shows "imessage"

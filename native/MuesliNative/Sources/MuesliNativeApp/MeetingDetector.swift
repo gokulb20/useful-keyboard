@@ -25,6 +25,13 @@ struct RunningAppInfo {
 struct MeetingDetection {
     let appName: String
     let meetingTitle: String?
+    let context: AppContext?
+
+    init(appName: String, meetingTitle: String?, context: AppContext? = nil) {
+        self.appName = appName
+        self.meetingTitle = meetingTitle
+        self.context = context
+    }
 }
 
 /// Pure detection logic — no system dependencies, fully testable.

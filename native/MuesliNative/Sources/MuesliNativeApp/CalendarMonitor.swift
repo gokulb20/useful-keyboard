@@ -52,19 +52,21 @@ final class CalendarMonitor {
     /// Returns the current or recently started event (within 15 minutes)
     /// for meeting detection. Prefers currently active events over nearby ones.
     func currentOrNearbyEvent() -> CalendarEventContext? {
+        currentOrNearbyRichEvent()?.asCalendarEventContext
+    }
+
+    /// Returns rich calendar context with attendees, recurrence, notes, etc.
+    func currentOrNearbyRichEvent() -> RichCalendarContext? {
         let now = Date()
         let searchStart = now.addingTimeInterval(-15 * 60)
         let searchEnd = now.addingTimeInterval(5 * 60)
         let predicate = store.predicateForEvents(withStart: searchStart, end: searchEnd, calendars: nil)
         let events = store.events(matching: predicate)
 
-        var nearby: CalendarEventContext?
+        var nearby: RichCalendarContext?
         for event in events {
             guard let startDate = event.startDate, let endDate = event.endDate else { continue }
-            let ctx = CalendarEventContext(
-                id: event.eventIdentifier ?? UUID().uuidString,
-                title: event.title ?? "Meeting"
-            )
+            let ctx = richContext(from: event)
             // Currently active — return immediately
             if startDate <= now && endDate > now {
                 return ctx
@@ -75,6 +77,24 @@ final class CalendarMonitor {
             }
         }
         return nearby
+    }
+
+    /// Extract rich context from an EKEvent.
+    private func richContext(from event: EKEvent) -> RichCalendarContext {
+        let attendeeNames = event.attendees?.compactMap { participant -> String? in
+            participant.name ?? participant.url?.absoluteString
+        } ?? []
+
+        return RichCalendarContext(
+            id: event.eventIdentifier ?? UUID().uuidString,
+            title: event.title ?? "Meeting",
+            attendees: attendeeNames,
+            attendeeCount: event.attendees?.count ?? 0,
+            notes: event.notes,
+            isRecurring: event.hasRecurrenceRules,
+            organizer: event.organizer?.name,
+            location: event.location
+        )
     }
 
     private func checkMeetings() {
