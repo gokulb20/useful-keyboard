@@ -3,12 +3,12 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_CONFIG="${1:-debug}"
-INSTALL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/muesli-packaging-test.XXXXXX")"
-APP_BUNDLE_NAME="MuesliPackagingTest.app"
+INSTALL_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/uk-packaging-test.XXXXXX")"
+APP_BUNDLE_NAME="UsefulKeyboardPackagingTest.app"
 APP_PATH="$INSTALL_ROOT/$APP_BUNDLE_NAME"
-APP_BIN="$APP_PATH/Contents/MacOS/Muesli"
-CLI_BIN="$APP_PATH/Contents/MacOS/muesli-cli"
-SPEC_OUTPUT="$INSTALL_ROOT/muesli-cli-spec.json"
+APP_BIN="$APP_PATH/Contents/MacOS/Useful Keyboard"
+CLI_BIN="$APP_PATH/Contents/MacOS/useful-keyboard-cli"
+SPEC_OUTPUT="$INSTALL_ROOT/useful-keyboard-cli-spec.json"
 
 cleanup() {
   rm -rf "$INSTALL_ROOT"
@@ -16,9 +16,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Building isolated app bundle in $INSTALL_ROOT"
-MUESLI_INSTALL_DIR="$INSTALL_ROOT" \
-MUESLI_APP_BUNDLE_NAME="$APP_BUNDLE_NAME" \
-MUESLI_SKIP_SIGN=1 \
+UK_INSTALL_DIR="$INSTALL_ROOT" \
+UK_APP_BUNDLE_NAME="$APP_BUNDLE_NAME" \
+UK_SKIP_SIGN=1 \
 "$ROOT/scripts/build_native_app.sh" "$BUILD_CONFIG"
 
 if [[ ! -d "$APP_PATH" ]]; then
@@ -38,7 +38,7 @@ fi
 
 "$CLI_BIN" spec > "$SPEC_OUTPUT"
 
-if ! grep -q '"command" : "muesli-cli spec"' "$SPEC_OUTPUT"; then
+if ! grep -q '"command" : "useful-keyboard-cli spec"' "$SPEC_OUTPUT"; then
   echo "Packaged CLI did not return the expected spec payload." >&2
   cat "$SPEC_OUTPUT" >&2
   exit 1

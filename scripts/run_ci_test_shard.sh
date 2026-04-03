@@ -13,7 +13,7 @@ case "${shard}" in
     filters=(
       ConfigStoreTests
       DictationStoreTests
-      MuesliCLITests
+      UsefulKeyboardCLITests
       ChatGPTAuthTests
       ChatGPTTokenStorageTests
       FloatingIndicatorVisibilityTests
@@ -75,7 +75,7 @@ case "${shard}" in
     ;;
 esac
 
-args=(--package-path native/MuesliNative)
+args=(--package-path native/UsefulKeyboard)
 for filter in "${filters[@]}"; do
   args+=(--filter "${filter}")
 done

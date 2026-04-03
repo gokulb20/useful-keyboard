@@ -1,0 +1,673 @@
+import Testing
+import Foundation
+import UsefulKeyboardCore
+import SQLite3
+@testable import UsefulKeyboardApp
+
+@Suite("DictationStore", .serialized)
+struct DictationStoreTests {
+
+    /// Creates a DictationStore backed by a temporary database file.
+    /// Each test gets its own isolated DB — no production data is touched.
+    private func makeStore() throws -> DictationStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uk-test-\(UUID().uuidString).db")
+        let store = DictationStore(databaseURL: url)
+        try store.migrateIfNeeded()
+        return store
+    }
+
+    private func makeLegacyStore() throws -> DictationStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("uk-legacy-test-\(UUID().uuidString).db")
+        var db: OpaquePointer?
+        #expect(sqlite3_open(url.path, &db) == SQLITE_OK)
+        defer { sqlite3_close(db) }
+        let sql = """
+        CREATE TABLE meetings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            calendar_event_id TEXT,
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            duration_seconds REAL,
+            raw_transcript TEXT,
+            formatted_notes TEXT,
+            mic_audio_path TEXT,
+            system_audio_path TEXT,
+            word_count INTEGER NOT NULL DEFAULT 0,
+            source TEXT NOT NULL DEFAULT 'meeting',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        """
+        #expect(sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK)
+        return DictationStore(databaseURL: url)
+    }
+
+    @Test("migration creates tables without error")
+    func migration() throws {
+        let store = try makeStore()
+        try store.migrateIfNeeded() // idempotent
+    }
+
+    @Test("migration adds template columns to legacy meeting schema")
+    func migrationAddsTemplateColumns() throws {
+        let store = try makeLegacyStore()
+
+        try store.migrateIfNeeded()
+
+        let meeting = try store.meeting(id: 1)
+        #expect(meeting == nil)
+        try store.insertMeeting(
+            title: "Legacy Meeting",
+            calendarEventID: nil,
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(60),
+            rawTranscript: "Legacy transcript",
+            formattedNotes: "Legacy notes",
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            selectedTemplateID: "one-to-one",
+            selectedTemplateName: "1 to 1",
+            selectedTemplateKind: .builtin,
+            selectedTemplatePrompt: "## Check-In"
+        )
+        let inserted = try store.recentMeetings(limit: 1).first
+        #expect(inserted?.selectedTemplateID == "one-to-one")
+        #expect(inserted?.selectedTemplateKind == .builtin)
+        #expect(inserted?.savedRecordingPath == nil)
+    }
+
+    @Test("migration adds saved recording path column to legacy meeting schema")
+    func migrationAddsSavedRecordingColumn() throws {
+        let store = try makeLegacyStore()
+
+        try store.migrateIfNeeded()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Saved Meeting",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(60),
+            rawTranscript: "Transcript",
+            formattedNotes: "Notes",
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            savedRecordingPath: "/tmp/meeting.wav"
+        )
+
+        let inserted = try store.recentMeetings(limit: 1).first
+        #expect(inserted?.savedRecordingPath == "/tmp/meeting.wav")
+    }
+
+    @Test("insert and retrieve dictation")
+    func insertAndRetrieve() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertDictation(
+            text: "Test dictation text here",
+            durationSeconds: 3.5,
+            startedAt: now.addingTimeInterval(-3.5),
+            endedAt: now
+        )
+
+        let rows = try store.recentDictations(limit: 10)
+        #expect(rows.count == 1)
+        #expect(rows.first!.rawText == "Test dictation text here")
+        #expect(rows.first!.wordCount == 4)
+    }
+
+    @Test("insert and retrieve meeting")
+    func insertAndRetrieveMeeting() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Test Meeting",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(600),
+            rawTranscript: "Speaker one said hello. Speaker two replied.",
+            formattedNotes: "## Summary\nGood meeting",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let rows = try store.recentMeetings(limit: 10)
+        #expect(rows.count == 1)
+        #expect(rows.first!.title == "Test Meeting")
+        #expect(rows.first!.wordCount == 7)
+        #expect(rows.first!.appliedTemplateID == MeetingTemplates.autoID)
+    }
+
+    @Test("meeting template snapshot persists on insert")
+    func insertAndRetrieveMeetingTemplateSnapshot() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Template Meeting",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(300),
+            rawTranscript: "Transcript body",
+            formattedNotes: "## Summary\nStructured",
+            micAudioPath: nil,
+            systemAudioPath: nil,
+            selectedTemplateID: "stand-up",
+            selectedTemplateName: "Stand-Up",
+            selectedTemplateKind: .builtin,
+            selectedTemplatePrompt: "## Yesterday"
+        )
+
+        let meeting = try store.recentMeetings(limit: 1).first
+        #expect(meeting?.selectedTemplateID == "stand-up")
+        #expect(meeting?.selectedTemplateName == "Stand-Up")
+        #expect(meeting?.selectedTemplateKind == .builtin)
+        #expect(meeting?.selectedTemplatePrompt == "## Yesterday")
+    }
+
+    @Test("update meeting notes and title")
+    func updateMeeting() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Meeting",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(60),
+            rawTranscript: "Some transcript",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let rows = try store.recentMeetings(limit: 1)
+        let meetingId = rows.first!.id
+
+        try store.updateMeeting(id: meetingId, title: "Sprint Planning", formattedNotes: "## Summary\nPlanned the sprint")
+
+        let updated = try store.recentMeetings(limit: 1)
+        #expect(updated.first!.title == "Sprint Planning")
+        #expect(updated.first!.formattedNotes == "## Summary\nPlanned the sprint")
+    }
+
+    @Test("update meeting notes only")
+    func updateMeetingNotesOnly() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Original Title",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(60),
+            rawTranscript: "Transcript",
+            formattedNotes: "Old notes",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let rows = try store.recentMeetings(limit: 1)
+        try store.updateMeetingNotes(id: rows.first!.id, formattedNotes: "New notes")
+
+        let updated = try store.recentMeetings(limit: 1)
+        #expect(updated.first!.title == "Original Title") // title unchanged
+        #expect(updated.first!.formattedNotes == "New notes")
+    }
+
+    @Test("update meeting summary stores template snapshot")
+    func updateMeetingSummaryWithTemplateSnapshot() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Original Title",
+            calendarEventID: nil,
+            startTime: start,
+            endTime: start.addingTimeInterval(60),
+            rawTranscript: "Transcript",
+            formattedNotes: "Old notes",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let meetingID = try store.recentMeetings(limit: 1).first!.id
+        try store.updateMeetingSummary(
+            id: meetingID,
+            title: "Standup",
+            formattedNotes: "## Yesterday\n- Fixed bugs",
+            selectedTemplateID: "stand-up",
+            selectedTemplateName: "Stand-Up",
+            selectedTemplateKind: .builtin,
+            selectedTemplatePrompt: "## Yesterday"
+        )
+
+        let updated = try store.recentMeetings(limit: 1).first
+        #expect(updated?.title == "Standup")
+        #expect(updated?.selectedTemplateID == "stand-up")
+        #expect(updated?.selectedTemplateName == "Stand-Up")
+        #expect(updated?.selectedTemplateKind == .builtin)
+        #expect(updated?.selectedTemplatePrompt == "## Yesterday")
+    }
+
+    @Test("fetch dictation by id returns the full record")
+    func fetchDictationByID() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertDictation(
+            text: "Capture this dictation",
+            durationSeconds: 4.2,
+            appContext: "Slack",
+            startedAt: now.addingTimeInterval(-4.2),
+            endedAt: now
+        )
+
+        let inserted = try store.recentDictations(limit: 1).first!
+        let fetched = try store.dictation(id: inserted.id)
+
+        #expect(fetched?.id == inserted.id)
+        #expect(fetched?.rawText == "Capture this dictation")
+        #expect(fetched?.appContext == "Slack")
+    }
+
+    @Test("fetch meeting by id returns audio paths and notes state")
+    func fetchMeetingByID() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertMeeting(
+            title: "Recorded Meeting",
+            calendarEventID: "evt_123",
+            startTime: now,
+            endTime: now.addingTimeInterval(90),
+            rawTranscript: "Discussed roadmap items",
+            formattedNotes: "## Summary\nRoadmap reviewed",
+            micAudioPath: "/tmp/mic.wav",
+            systemAudioPath: "/tmp/system.wav",
+            savedRecordingPath: "/tmp/meeting.wav"
+        )
+
+        let inserted = try store.recentMeetings(limit: 1).first!
+        let fetched = try store.meeting(id: inserted.id)
+
+        #expect(fetched?.id == inserted.id)
+        #expect(fetched?.calendarEventID == "evt_123")
+        #expect(fetched?.micAudioPath == "/tmp/mic.wav")
+        #expect(fetched?.systemAudioPath == "/tmp/system.wav")
+        #expect(fetched?.savedRecordingPath == "/tmp/meeting.wav")
+        #expect(fetched?.notesState == .structuredNotes)
+        #expect(fetched?.appliedTemplateID == MeetingTemplates.autoID)
+    }
+
+    @Test("meeting notes state distinguishes raw transcript fallback from structured notes")
+    func meetingNotesState() throws {
+        let missing = MeetingRecord(
+            id: 1,
+            title: "Missing",
+            startTime: "2026-03-17T10:00:00Z",
+            durationSeconds: 60,
+            rawTranscript: "Hello world",
+            formattedNotes: "",
+            wordCount: 2,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+        let fallback = MeetingRecord(
+            id: 2,
+            title: "Fallback",
+            startTime: "2026-03-17T10:00:00Z",
+            durationSeconds: 60,
+            rawTranscript: "Hello world",
+            formattedNotes: "## Raw Transcript\n\nHello world",
+            wordCount: 2,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+        let structured = MeetingRecord(
+            id: 3,
+            title: "Structured",
+            startTime: "2026-03-17T10:00:00Z",
+            durationSeconds: 60,
+            rawTranscript: "Hello world",
+            formattedNotes: "## Summary\nNext steps captured",
+            wordCount: 2,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+        let structuredWithTranscriptSection = MeetingRecord(
+            id: 4,
+            title: "Structured With Transcript Section",
+            startTime: "2026-03-17T10:00:00Z",
+            durationSeconds: 60,
+            rawTranscript: "Hello world",
+            formattedNotes: "## Summary\nNext steps captured\n\n## Raw Transcript\n\nQuoted transcript for reference",
+            wordCount: 2,
+            folderID: nil,
+            calendarEventID: nil,
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        #expect(missing.notesState == .missing)
+        #expect(fallback.notesState == .rawTranscriptFallback)
+        #expect(structured.notesState == .structuredNotes)
+        #expect(structuredWithTranscriptSection.notesState == .structuredNotes)
+    }
+
+    @Test("dictation stats aggregate correctly")
+    func dictationStats() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertDictation(text: "one two three", durationSeconds: 2.0, startedAt: now.addingTimeInterval(-2), endedAt: now)
+        try store.insertDictation(text: "four five", durationSeconds: 1.5, startedAt: now.addingTimeInterval(-1.5), endedAt: now)
+
+        let stats = try store.dictationStats()
+        #expect(stats.totalWords == 5)
+        #expect(stats.totalSessions == 2)
+        #expect(stats.averageWPM > 0)
+    }
+
+    @Test("meeting stats aggregate correctly")
+    func meetingStats() throws {
+        let store = try makeStore()
+
+        let start = Date()
+        try store.insertMeeting(
+            title: "Stats Meeting", calendarEventID: nil,
+            startTime: start, endTime: start.addingTimeInterval(300),
+            rawTranscript: "This is a test transcript with several words",
+            formattedNotes: "", micAudioPath: nil, systemAudioPath: nil
+        )
+
+        let stats = try store.meetingStats()
+        #expect(stats.totalMeetings == 1)
+        #expect(stats.totalWords == 8)
+    }
+
+    @Test("clear dictations removes all records")
+    func clearDictations() throws {
+        let store = try makeStore()
+        let now = Date()
+        try store.insertDictation(text: "to delete", durationSeconds: 1.0, startedAt: now, endedAt: now)
+        try store.clearDictations()
+        #expect(try store.recentDictations(limit: 100).isEmpty)
+    }
+
+    @Test("clear meetings removes all records")
+    func clearMeetings() throws {
+        let store = try makeStore()
+        let now = Date()
+        try store.insertMeeting(title: "Del", calendarEventID: nil, startTime: now, endTime: now.addingTimeInterval(60), rawTranscript: "x", formattedNotes: "", micAudioPath: nil, systemAudioPath: nil)
+        try store.clearMeetings()
+        #expect(try store.recentMeetings(limit: 100).isEmpty)
+    }
+
+    @Test("delete meeting removes a single meeting row")
+    func deleteMeeting() throws {
+        let store = try makeStore()
+        let now = Date()
+
+        try store.insertMeeting(
+            title: "Delete Me",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "first meeting",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+        try store.insertMeeting(
+            title: "Keep Me",
+            calendarEventID: nil,
+            startTime: now.addingTimeInterval(120),
+            endTime: now.addingTimeInterval(180),
+            rawTranscript: "second meeting",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let meetings = try store.recentMeetings(limit: 10)
+        let deleteID = meetings.first(where: { $0.title == "Delete Me" })!.id
+        try store.deleteMeeting(id: deleteID)
+
+        let remaining = try store.recentMeetings(limit: 10)
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.title == "Keep Me")
+    }
+
+    @Test("recent dictations respects limit")
+    func limitRespected() throws {
+        let store = try makeStore()
+        let now = Date()
+        for i in 0..<5 {
+            try store.insertDictation(text: "Entry \(i)", durationSeconds: 1.0, startedAt: now.addingTimeInterval(Double(i)), endedAt: now.addingTimeInterval(Double(i) + 1))
+        }
+        #expect(try store.recentDictations(limit: 3).count == 3)
+    }
+
+    @Test("recent dictations treats fromDate as a bound value, not SQL")
+    func recentDictationsBindsFromDate() throws {
+        let store = try makeStore()
+        let now = Date()
+
+        try store.insertDictation(
+            text: "Older entry",
+            durationSeconds: 1.0,
+            startedAt: now.addingTimeInterval(-120),
+            endedAt: now.addingTimeInterval(-120)
+        )
+        try store.insertDictation(
+            text: "Newer entry",
+            durationSeconds: 1.0,
+            startedAt: now,
+            endedAt: now
+        )
+
+        let injectedDate = "9999-12-31T00:00:00Z' OR 1=1 --"
+        let rows = try store.recentDictations(limit: 10, fromDate: injectedDate)
+
+        #expect(rows.isEmpty)
+    }
+
+    // MARK: - Editable Meeting Title
+
+    @Test("update meeting title only preserves notes")
+    func updateMeetingTitleOnly() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertMeeting(
+            title: "Auto Title",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "Some words",
+            formattedNotes: "## Notes\nKeep these",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let rows = try store.recentMeetings(limit: 1)
+        try store.updateMeetingTitle(id: rows.first!.id, title: "Edited Title")
+
+        let updated = try store.recentMeetings(limit: 1)
+        #expect(updated.first!.title == "Edited Title")
+        #expect(updated.first!.formattedNotes == "## Notes\nKeep these") // notes unchanged
+    }
+
+    @Test("update meeting saved recording path stores the retained file location")
+    func updateMeetingSavedRecordingPath() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        let meetingID = try store.insertMeeting(
+            title: "Auto Title",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "Some words",
+            formattedNotes: "## Notes\nKeep these",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        try store.updateMeetingSavedRecordingPath(id: meetingID, path: "/tmp/retained.wav")
+
+        let updated = try store.meeting(id: meetingID)
+        #expect(updated?.savedRecordingPath == "/tmp/retained.wav")
+    }
+
+    // MARK: - Folder CRUD
+
+    @Test("create and list folders")
+    func createAndListFolders() throws {
+        let store = try makeStore()
+
+        let id1 = try store.createFolder(name: "Engineering")
+        let id2 = try store.createFolder(name: "Customer Calls")
+
+        let folders = try store.listFolders()
+        #expect(folders.count == 2)
+        #expect(folders.contains(where: { $0.id == id1 && $0.name == "Engineering" }))
+        #expect(folders.contains(where: { $0.id == id2 && $0.name == "Customer Calls" }))
+    }
+
+    @Test("rename folder")
+    func renameFolder() throws {
+        let store = try makeStore()
+
+        let id = try store.createFolder(name: "Old Name")
+        try store.renameFolder(id: id, name: "New Name")
+
+        let folders = try store.listFolders()
+        let folder = folders.first(where: { $0.id == id })
+        #expect(folder?.name == "New Name")
+    }
+
+    @Test("delete folder removes it from list")
+    func deleteFolderRemovesIt() throws {
+        let store = try makeStore()
+
+        let id = try store.createFolder(name: "To Delete")
+        #expect(try store.listFolders().contains(where: { $0.id == id }))
+
+        try store.deleteFolder(id: id)
+        let remaining = try store.listFolders()
+        #expect(!remaining.contains(where: { $0.id == id }))
+    }
+
+    // MARK: - Move Meeting to Folder
+
+    @Test("move meeting to folder sets folderID")
+    func moveMeetingToFolder() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertMeeting(
+            title: "Standup",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "Daily standup",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let folderID = try store.createFolder(name: "Team")
+        let meeting = try store.recentMeetings(limit: 1).first!
+        #expect(meeting.folderID == nil) // starts unfiled
+
+        try store.moveMeeting(id: meeting.id, toFolder: folderID)
+
+        let updated = try store.recentMeetings(limit: 1).first!
+        #expect(updated.folderID == folderID)
+    }
+
+    @Test("move meeting to nil unfiles it")
+    func moveMeetingToUnfiled() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertMeeting(
+            title: "Filed Meeting",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "words",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let folderID = try store.createFolder(name: "Temp")
+        let meetingID = try store.recentMeetings(limit: 1).first!.id
+        try store.moveMeeting(id: meetingID, toFolder: folderID)
+        #expect(try store.recentMeetings(limit: 1).first!.folderID == folderID)
+
+        try store.moveMeeting(id: meetingID, toFolder: nil)
+        #expect(try store.recentMeetings(limit: 1).first!.folderID == nil)
+    }
+
+    @Test("delete folder moves its meetings to unfiled")
+    func deleteFolderUnfilesMeetings() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        let folderID = try store.createFolder(name: "Doomed Folder")
+
+        try store.insertMeeting(
+            title: "Meeting A",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "a",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+        let meetingID = try store.recentMeetings(limit: 1).first!.id
+        try store.moveMeeting(id: meetingID, toFolder: folderID)
+        #expect(try store.recentMeetings(limit: 1).first!.folderID == folderID)
+
+        try store.deleteFolder(id: folderID)
+
+        let meeting = try store.recentMeetings(limit: 1).first!
+        #expect(meeting.folderID == nil) // moved to unfiled
+        #expect(meeting.title == "Meeting A") // meeting still exists
+    }
+
+    @Test("new meetings have nil folderID by default")
+    func newMeetingsUnfiled() throws {
+        let store = try makeStore()
+
+        let now = Date()
+        try store.insertMeeting(
+            title: "Unfiled Meeting",
+            calendarEventID: nil,
+            startTime: now,
+            endTime: now.addingTimeInterval(60),
+            rawTranscript: "test",
+            formattedNotes: "",
+            micAudioPath: nil,
+            systemAudioPath: nil
+        )
+
+        let meeting = try store.recentMeetings(limit: 1).first!
+        #expect(meeting.folderID == nil)
+    }
+}

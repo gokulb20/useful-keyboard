@@ -2,23 +2,23 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PACKAGE_DIR="$ROOT/native/MuesliNative"
+PACKAGE_DIR="$ROOT/native/UsefulKeyboard"
 DIST_DIR="$ROOT/dist-native"
-INSTALL_DIR="${MUESLI_INSTALL_DIR:-/Applications}"
+INSTALL_DIR="${UK_INSTALL_DIR:-/Applications}"
 BUILD_CONFIG="${1:-release}"
-APP_BINARY="MuesliNativeApp"
-CLI_BINARY="muesli-cli"
-APP_NAME="${MUESLI_APP_NAME:-Muesli}"
-APP_DISPLAY_NAME="${MUESLI_DISPLAY_NAME:-$APP_NAME}"
-APP_BUNDLE_NAME="${MUESLI_APP_BUNDLE_NAME:-$APP_NAME.app}"
-APP_EXECUTABLE_NAME="${MUESLI_EXECUTABLE_NAME:-Muesli}"
-APP_SUPPORT_DIR_NAME="${MUESLI_SUPPORT_DIR_NAME:-$APP_DISPLAY_NAME}"
-BUNDLE_ID="${MUESLI_BUNDLE_ID:-com.muesli.app}"
+APP_BINARY="UsefulKeyboardApp"
+CLI_BINARY="useful-keyboard-cli"
+APP_NAME="${UK_APP_NAME:-Useful Keyboard}"
+APP_DISPLAY_NAME="${UK_DISPLAY_NAME:-$APP_NAME}"
+APP_BUNDLE_NAME="${UK_APP_BUNDLE_NAME:-$APP_NAME.app}"
+APP_EXECUTABLE_NAME="${UK_EXECUTABLE_NAME:-Useful Keyboard}"
+APP_SUPPORT_DIR_NAME="${UK_SUPPORT_DIR_NAME:-$APP_DISPLAY_NAME}"
+BUNDLE_ID="${UK_BUNDLE_ID:-com.usefulkeyboard.app}"
 STAGED_APP_DIR="$DIST_DIR/$APP_BUNDLE_NAME"
 APP_DIR="$INSTALL_DIR/$APP_BUNDLE_NAME"
 DEFAULT_SIGN_IDENTITY="Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)"
-SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-$DEFAULT_SIGN_IDENTITY}"
-SKIP_SIGN="${MUESLI_SKIP_SIGN:-0}"
+SIGN_IDENTITY="${UK_SIGN_IDENTITY:-$DEFAULT_SIGN_IDENTITY}"
+SKIP_SIGN="${UK_SKIP_SIGN:-0}"
 
 mkdir -p "$DIST_DIR"
 
@@ -61,8 +61,8 @@ if [[ -d "$SPARKLE_FW" ]]; then
 fi
 
 # Bundle assets
-cp "$ROOT/assets/menu_m_template.png" "$STAGED_APP_DIR/Contents/Resources/menu_m_template.png"
-cp "$ROOT/assets/muesli.icns" "$STAGED_APP_DIR/Contents/Resources/muesli.icns"
+cp "$ROOT/assets/menu-icon-template.png" "$STAGED_APP_DIR/Contents/Resources/menu-icon-template.png"
+cp "$ROOT/assets/app-icon.icns" "$STAGED_APP_DIR/Contents/Resources/app-icon.icns"
 if [[ -d "$ROOT/assets/fonts" ]]; then
   ditto "$ROOT/assets/fonts" "$STAGED_APP_DIR/Contents/Resources/fonts"
 fi
@@ -87,8 +87,8 @@ cat > "$STAGED_APP_DIR/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleIconFile</key>
-  <string>muesli.icns</string>
-  <key>MuesliSupportDirectoryName</key>
+  <string>app-icon.icns</string>
+  <key>UsefulKeyboardSupportDirectoryName</key>
   <string>$APP_SUPPORT_DIR_NAME</string>
   <key>LSUIElement</key>
   <true/>
@@ -101,9 +101,9 @@ cat > "$STAGED_APP_DIR/Contents/Info.plist" <<PLIST
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>$APP_DISPLAY_NAME reads calendar events to help with meeting recordings.</string>
   <key>SUFeedURL</key>
-  <string>https://pHequals7.github.io/muesli/appcast.xml</string>
+  <string>https://gokulb20.github.io/useful-keyboard/appcast.xml</string>
   <key>SUPublicEDKey</key>
-  <string>${MUESLI_SPARKLE_EDKEY:-ok9CQBJ3f0MJ2GXuGBubc6VyeWyb5exmqP2b9DceqH4=}</string>
+  <string>${UK_SPARKLE_EDKEY:-ok9CQBJ3f0MJ2GXuGBubc6VyeWyb5exmqP2b9DceqH4=}</string>
   <key>SUEnableAutomaticChecks</key>
   <true/>
 </dict>
@@ -153,10 +153,10 @@ if [[ "$SKIP_SIGN" != "1" ]]; then
 
   codesign --force --options runtime --timestamp \
     --sign "$SIGN_IDENTITY" \
-    "$APP_DIR/Contents/MacOS/muesli-cli"
+    "$APP_DIR/Contents/MacOS/useful-keyboard-cli"
 
   # Sign the app bundle with hardened runtime, secure timestamp, and entitlements
-  ENTITLEMENTS="$ROOT/scripts/Muesli.entitlements"
+  ENTITLEMENTS="$ROOT/scripts/UsefulKeyboard.entitlements"
   codesign --force --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" \
     --sign "$SIGN_IDENTITY" \
@@ -170,7 +170,7 @@ if [[ "$SKIP_SIGN" != "1" ]]; then
   fi
   echo "  Deep signature valid."
 else
-  echo "Skipping codesign because MUESLI_SKIP_SIGN=1"
+  echo "Skipping codesign because UK_SKIP_SIGN=1"
 fi
 
 rm -rf "$STAGED_APP_DIR"
