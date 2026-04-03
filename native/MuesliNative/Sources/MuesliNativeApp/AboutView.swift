@@ -95,6 +95,12 @@ struct AboutView: View {
                     }
                 }
 
+                // MARK: - iCloud Sync
+                sectionHeader("iCloud Sync")
+                aboutCard {
+                    CloudSyncStatusView()
+                }
+
                 // MARK: - Acknowledgements
                 sectionHeader("Acknowledgements")
                 aboutCard {
