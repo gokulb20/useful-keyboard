@@ -43,6 +43,7 @@ final class AppState {
     // Live status
     var isMeetingRecording: Bool = false
     var isChatGPTAuthenticated: Bool = false
+    var detectedContext: String = "general"
 
     // Dictation pagination & filtering
     var dictationPageSize: Int = 50

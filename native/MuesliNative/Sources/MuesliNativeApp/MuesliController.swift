@@ -1132,6 +1132,7 @@ final class MuesliController: NSObject {
         do {
             try recorder.start()
             dictationStartedAt = Date()
+            captureContext()
             indicator.powerProvider = { [weak self] in
                 self?.recorder.currentPower() ?? -160
             }
@@ -1187,6 +1188,14 @@ final class MuesliController: NSObject {
         setState(.idle)
     }
 
+    private func captureContext() {
+        guard config.contextDetectionEnabled else {
+            appState.detectedContext = "general"
+            return
+        }
+        appState.detectedContext = ContextDetector.detectCurrentContext().rawValue
+    }
+
     private func handleToggleStart() {
         if isMeetingRecording() { return }
         fputs("[muesli-native] toggle dictation start\n", stderr)
@@ -1198,6 +1207,7 @@ final class MuesliController: NSObject {
                 isNemotronStreaming = true
                 previousStreamText = ""
                 dictationStartedAt = Date()
+                captureContext()
                 indicator.setToggleDictation(true, config: config)
                 fputs("[muesli-native] Nemotron streaming toggle mode active\n", stderr)
                 startNemotronStreamingAsync()
@@ -1209,6 +1219,7 @@ final class MuesliController: NSObject {
             try recorder.prepare()
             try recorder.start()
             dictationStartedAt = Date()
+            captureContext()
             indicator.powerProvider = { [weak self] in
                 self?.recorder.currentPower() ?? -160
             }
