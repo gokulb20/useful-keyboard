@@ -43,6 +43,7 @@ final class AppState {
     // Live status
     var isMeetingRecording: Bool = false
     var isChatGPTAuthenticated: Bool = false
+    var dictationReadiness: DictationReadiness = DictationReadiness(issues: [])
 
     // Dictation pagination & filtering
     var dictationPageSize: Int = 50
@@ -51,7 +52,11 @@ final class AppState {
     var hasMoreDictations: Bool = true
 
     // Navigation
-    var selectedTab: DashboardTab = .dictations
+    var selectedTab: DashboardTab = .meetings
+
+    // Search
+    var meetingSearchQuery: String = ""
+    var meetingSearchResults: [MeetingRecord]?
 
     // Computed
     var selectedMeeting: MeetingRecord? {

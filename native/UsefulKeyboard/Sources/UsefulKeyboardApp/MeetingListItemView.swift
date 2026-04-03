@@ -16,62 +16,70 @@ struct MeetingListItemView: View {
         return folders.first(where: { $0.id == fid })?.name
     }
 
+    private var avatarColor: Color {
+        let hash = abs(record.title.hashValue)
+        let colors: [Color] = [
+            .blue, .purple, .pink, .orange, .green, .teal, .indigo, .mint
+        ]
+        return colors[hash % colors.count]
+    }
+
+    private var avatarInitial: String {
+        let words = record.title.split(separator: " ")
+        if words.count >= 2 {
+            return String(words[0].prefix(1) + words[1].prefix(1)).uppercased()
+        }
+        return String(record.title.prefix(2)).uppercased()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing8) {
-            HStack(alignment: .top) {
-                Text(record.title)
-                    .font(Theme.headline())
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(2)
-
-                Spacer(minLength: 4)
-
-                HStack(spacing: 6) {
-                    if !folders.isEmpty {
-                        folderMenuButton
-                    }
-                    if onDelete != nil {
-                        deleteButton
-                    }
-                }
+        HStack(spacing: Theme.spacing12) {
+            // Avatar
+            ZStack {
+                Circle()
+                    .fill(avatarColor.opacity(0.2))
+                Text(avatarInitial)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(avatarColor)
             }
+            .frame(width: 32, height: 32)
 
-            HStack(spacing: Theme.spacing4) {
-                Text(formatMeta())
-                    .font(Theme.caption())
-                    .foregroundStyle(Theme.textSecondary)
+            // Title + subtitle
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.title)
+                    .font(Theme.body())
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
 
-                // Current folder badge
-                if let name = currentFolderName {
-                    Text("\u{2022}")
+                HStack(spacing: 4) {
+                    Text(previewText())
                         .font(Theme.caption())
                         .foregroundStyle(Theme.textTertiary)
-                    HStack(spacing: 2) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 9))
-                        Text(name)
-                            .font(Theme.caption())
-                    }
-                    .foregroundStyle(Theme.accent.opacity(0.8))
+                        .lineLimit(1)
                 }
             }
 
-            Text(previewText())
-                .font(Theme.caption())
-                .foregroundStyle(Theme.textTertiary)
-                .lineLimit(2)
+            Spacer(minLength: 4)
+
+            // Right side: folder badge + actions + time
+            HStack(spacing: 8) {
+                if let name = currentFolderName, isHovering {
+                    folderBadge(name: name)
+                }
+
+                if isHovering {
+                    actionButtons
+                }
+
+                Text(formatTimeOnly(record.startTime))
+                    .font(Theme.caption())
+                    .foregroundStyle(Theme.textTertiary)
+                    .monospacedDigit()
+            }
         }
-        .padding(Theme.spacing16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isSelected ? Theme.surfaceSelected : Theme.backgroundRaised)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.cornerLarge))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.cornerLarge)
-                .strokeBorder(
-                    isSelected ? Theme.accent.opacity(0.35) : Theme.surfaceBorder,
-                    lineWidth: 1
-                )
-        )
+        .padding(.horizontal, Theme.spacing16)
+        .padding(.vertical, 10)
+        .background(isSelected ? Theme.surfaceSelected : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
@@ -79,11 +87,46 @@ struct MeetingListItemView: View {
             Button("Delete", role: .destructive) { onDelete?() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Are you sure you want to delete this meeting? Saved notes, transcript, and any retained recording will be removed.")
+            Text("Are you sure you want to delete this meeting?")
         }
     }
 
-    // MARK: - Folder menu button
+    // MARK: - Components
+
+    @ViewBuilder
+    private func folderBadge(name: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 9))
+            Text(name)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(Theme.accent)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Theme.accentSubtle)
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        HStack(spacing: 2) {
+            if !folders.isEmpty {
+                folderMenuButton
+            }
+            if onDelete != nil {
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
     @ViewBuilder
     private var folderMenuButton: some View {
@@ -107,56 +150,34 @@ struct MeetingListItemView: View {
                 }
             }
         } label: {
-            Image(systemName: record.folderID != nil ? "folder.fill" : "folder.badge.plus")
-                .font(.system(size: 11))
-                .foregroundStyle(
-                    record.folderID != nil
-                        ? Theme.accent
-                        : (isHovering ? Theme.textSecondary : Theme.textTertiary)
-                )
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.textTertiary)
+                .frame(width: 20, height: 20)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Move to folder")
-    }
-
-    @ViewBuilder
-    private var deleteButton: some View {
-        Button {
-            showDeleteConfirmation = true
-        } label: {
-            Image(systemName: "trash")
-                .font(.system(size: 11))
-                .foregroundStyle(
-                    isHovering
-                        ? Theme.recording.opacity(0.85)
-                        : Theme.textTertiary
-                )
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .opacity(isHovering ? 1 : 0)
-        .help("Delete meeting")
     }
 
     // MARK: - Formatting
 
-    private func formatMeta() -> String {
-        let time = formatTime(record.startTime)
-        let duration = formatDuration(record.durationSeconds)
-        return "\(time)  \u{2022}  \(duration)"
+    private func formatTimeOnly(_ raw: String) -> String {
+        guard let date = MeetingBrowserLogic.parseDate(raw) else {
+            return raw.count > 5 ? String(raw.suffix(5)) : raw
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:mm a"
+        return formatter.string(from: date)
     }
 
-    private func formatTime(_ raw: String) -> String {
-        let clean = raw.replacingOccurrences(of: "T", with: " ")
-        if clean.count > 16 {
-            return String(clean.prefix(16))
+    private func previewText() -> String {
+        let source = record.formattedNotes.isEmpty ? record.rawTranscript : record.formattedNotes
+        let compact = source.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        if compact.count > 60 {
+            return String(compact.prefix(57)) + "..."
         }
-        return clean
+        return compact.isEmpty ? formatDuration(record.durationSeconds) : compact
     }
 
     private func formatDuration(_ seconds: Double) -> String {
@@ -165,19 +186,8 @@ struct MeetingListItemView: View {
             return "\(rounded / 3600)h \((rounded % 3600) / 60)m"
         }
         if rounded >= 60 {
-            let m = rounded / 60
-            let s = rounded % 60
-            return s == 0 ? "\(m)m" : "\(m)m \(s)s"
+            return "\(rounded / 60)m"
         }
         return "\(rounded)s"
-    }
-
-    private func previewText() -> String {
-        let source = record.formattedNotes.isEmpty ? record.rawTranscript : record.formattedNotes
-        let compact = source.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        if compact.count > 88 {
-            return String(compact.prefix(85)) + "..."
-        }
-        return compact
     }
 }

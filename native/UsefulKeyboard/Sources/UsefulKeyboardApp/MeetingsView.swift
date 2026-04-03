@@ -144,7 +144,10 @@ struct MeetingsView: View {
     }
 
     private var filteredMeetings: [MeetingRecord] {
-        MeetingBrowserLogic.filteredMeetings(
+        if let searchResults = appState.meetingSearchResults {
+            return searchResults
+        }
+        return MeetingBrowserLogic.filteredMeetings(
             from: scopedMeetings,
             filter: selectedFilter,
             sort: selectedSort
@@ -198,13 +201,85 @@ struct MeetingsView: View {
     private var browserView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.spacing24) {
+                if !appState.dictationReadiness.isReady {
+                    SetupBannerView(
+                        readiness: appState.dictationReadiness,
+                        onNavigateToModels: { appState.selectedTab = .models },
+                        onShowOnboarding: { controller.showOnboarding() }
+                    )
+                }
+
                 browserHeader
 
                 if filteredMeetings.isEmpty {
                     emptyState
                 } else {
-                    LazyVStack(spacing: Theme.spacing12) {
-                        ForEach(filteredMeetings) { meeting in
+                    dateGroupedMeetingList
+                }
+            }
+            .frame(maxWidth: 960, alignment: .leading)
+            .padding(.horizontal, 40)
+            .padding(.vertical, 32)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    // MARK: - Date-Grouped Meeting List
+
+    private var groupedMeetings: [(key: String, meetings: [MeetingRecord])] {
+        let calendar = Calendar.current
+        let now = Date()
+        let today = calendar.startOfDay(for: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
+
+        var groups: [(key: String, meetings: [MeetingRecord])] = []
+        var buckets: [String: [MeetingRecord]] = [:]
+        var order: [String] = []
+
+        for meeting in filteredMeetings {
+            guard let date = MeetingBrowserLogic.parseDate(meeting.startTime) else {
+                let key = "Other"
+                buckets[key, default: []].append(meeting)
+                if !order.contains(key) { order.append(key) }
+                continue
+            }
+
+            let startOfDay = calendar.startOfDay(for: date)
+            let key: String
+            if startOfDay == today {
+                key = "Today"
+            } else if startOfDay == yesterday {
+                key = "Yesterday"
+            } else {
+                let formatter = DateFormatter()
+                formatter.dateFormat = "EEEE, d MMM"
+                key = formatter.string(from: date)
+            }
+
+            buckets[key, default: []].append(meeting)
+            if !order.contains(key) { order.append(key) }
+        }
+
+        for key in order {
+            if let meetings = buckets[key] {
+                groups.append((key: key, meetings: meetings))
+            }
+        }
+        return groups
+    }
+
+    @ViewBuilder
+    private var dateGroupedMeetingList: some View {
+        LazyVStack(alignment: .leading, spacing: Theme.spacing24) {
+            ForEach(groupedMeetings, id: \.key) { group in
+                VStack(alignment: .leading, spacing: Theme.spacing8) {
+                    Text(group.key)
+                        .font(Theme.headline())
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.leading, 4)
+
+                    VStack(spacing: 1) {
+                        ForEach(group.meetings) { meeting in
                             MeetingListItemView(
                                 record: meeting,
                                 isSelected: appState.selectedMeetingID == meeting.id,
@@ -219,12 +294,14 @@ struct MeetingsView: View {
                             )
                         }
                     }
+                    .background(Theme.backgroundRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerMedium))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.cornerMedium)
+                            .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
+                    )
                 }
             }
-            .frame(maxWidth: 960, alignment: .leading)
-            .padding(.horizontal, 40)
-            .padding(.vertical, 32)
-            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 

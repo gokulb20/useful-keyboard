@@ -9,39 +9,60 @@ struct SidebarView: View {
 
     let appState: AppState
     let controller: AppController
-    @State private var meetingsExpanded = true
+    @State private var spacesExpanded = true
     @State private var renamingFolderID: Int64?
     @State private var renamingFolderName = ""
     @State private var folderToDelete: MeetingFolder?
     @State private var showDeleteConfirmation = false
-
-    private var userName: String {
-        appState.config.userName
-    }
+    @State private var searchText = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing4) {
-            sidebarHeader
+        VStack(alignment: .leading, spacing: 0) {
+            // Search
+            HStack(spacing: Theme.spacing8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+                TextField("Search", text: $searchText)
+                    .font(Theme.body())
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Theme.backgroundRaised)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
+            .padding(.horizontal, sidebarRowOuterPadding)
+            .padding(.top, Theme.spacing16)
+            .padding(.bottom, Theme.spacing16)
+            .onChange(of: searchText) { _, query in
+                appState.meetingSearchQuery = query
+                controller.searchMeetings(query: query)
+            }
 
-            sidebarItem(tab: .dictations, icon: "mic.fill", label: "Dictations")
-            meetingsSection
-            sidebarItem(tab: .dictionary, icon: "character.book.closed", label: "Dictionary")
-            sidebarItem(tab: .models, icon: "square.and.arrow.down", label: "Models")
-            sidebarItem(tab: .shortcuts, icon: "keyboard", label: "Shortcuts")
+            // Home
+            sidebarItem(tab: .meetings, icon: "house.fill", label: "Home") {
+                appState.selectedFolderID = nil
+                controller.showMeetingsHome()
+            }
+
+            Spacer().frame(height: Theme.spacing16)
+
+            // Spaces section
+            spacesSection
 
             Spacer()
 
-            sidebarItem(tab: .settings, icon: "gearshape", label: "Settings")
-            sidebarItem(tab: .about, icon: "info.circle", label: "About")
-                .padding(.bottom, Theme.spacing16)
+            // Bottom toolbar
+            HStack(spacing: Theme.spacing16) {
+                Spacer()
+                bottomButton(icon: "gearshape", tab: .settings)
+            }
+            .padding(.horizontal, Theme.spacing16)
+            .padding(.bottom, Theme.spacing16)
         }
         .frame(maxHeight: .infinity)
         .background(Theme.backgroundDeep)
-        .onChange(of: appState.selectedTab) { _, tab in
-            if tab == .meetings {
-                meetingsExpanded = true
-            }
-        }
         .alert(
             "Delete \"\(folderToDelete?.name ?? "")\"?",
             isPresented: $showDeleteConfirmation
@@ -68,86 +89,47 @@ struct SidebarView: View {
         }
     }
 
-    @ViewBuilder
-    private var sidebarHeader: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing4) {
-            HStack(spacing: Theme.spacing12) {
-                WaveformIcon(barCount: 9, spacing: 2)
-                    .frame(width: 22, height: 22)
-                    .foregroundStyle(Theme.accent)
-                Text("useful keyboard")
-                    .font(Theme.title2())
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            if !userName.isEmpty {
-                Text("Hi, \(userName)")
-                    .font(Theme.caption())
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.leading, 34)
-            }
-        }
-        .padding(.horizontal, Theme.spacing16)
-        .padding(.top, Theme.spacing24)
-        .padding(.bottom, Theme.spacing20)
-    }
+    // MARK: - Spaces Section
 
     @ViewBuilder
-    private var meetingsSection: some View {
+    private var spacesSection: some View {
         VStack(alignment: .leading, spacing: 2) {
-            let isSelected = appState.selectedTab == .meetings
-            HStack(spacing: Theme.spacing12) {
+            // Section header
+            HStack {
                 Button {
                     withAnimation(.easeInOut(duration: 0.15)) {
-                        meetingsExpanded = true
+                        spacesExpanded.toggle()
                     }
-                    controller.showMeetingsHome()
                 } label: {
-                    HStack(spacing: Theme.spacing12) {
-                        Image(systemName: "person.2.fill")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundStyle(isSelected ? Theme.accent : Theme.textSecondary)
-                            .frame(width: sidebarIconColumnWidth)
-                        Text("Meetings")
-                            .font(Theme.headline())
-                            .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
-                        Spacer(minLength: 0)
+                    HStack(spacing: 6) {
+                        Image(systemName: spacesExpanded ? "chevron.down" : "chevron.right")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.textTertiary)
+                        Text("Spaces")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.textTertiary)
+                            .textCase(.uppercase)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
 
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        meetingsExpanded.toggle()
-                    }
-                } label: {
-                    Image(systemName: meetingsExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(isSelected ? Theme.textSecondary : Theme.textTertiary)
-                        .frame(width: meetingsTrailingColumnWidth, height: 18)
-                }
-                .buttonStyle(.plain)
+                Spacer()
 
                 Button(action: createNewFolder) {
-                    Image(systemName: "folder.badge.plus")
+                    Image(systemName: "plus")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(isSelected ? Theme.textSecondary : Theme.textTertiary)
-                        .frame(width: meetingsTrailingColumnWidth, height: 18)
+                        .foregroundStyle(Theme.textTertiary)
                 }
                 .buttonStyle(.plain)
-                .help("New Meeting Folder")
+                .help("New Space")
             }
             .padding(.horizontal, sidebarRowHorizontalPadding)
-            .padding(.vertical, Theme.spacing8)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.cornerSmall)
-                    .fill(isSelected ? Theme.surfaceSelected : Color.clear)
-            )
+            .padding(.vertical, 6)
             .padding(.horizontal, sidebarRowOuterPadding)
 
-            if meetingsExpanded {
+            if spacesExpanded {
                 VStack(alignment: .leading, spacing: 2) {
-                    meetingFilterRow(
+                    spaceRow(
                         icon: "tray.2",
                         label: "All Meetings",
                         count: appState.meetingRows.count,
@@ -160,7 +142,7 @@ struct SidebarView: View {
                         if renamingFolderID == folder.id {
                             folderRenameField(folder: folder)
                         } else {
-                            meetingFilterRow(
+                            spaceRow(
                                 icon: "folder",
                                 label: folder.name,
                                 count: appState.meetingRows.filter { $0.folderID == folder.id }.count,
@@ -187,14 +169,12 @@ struct SidebarView: View {
         }
     }
 
+    // MARK: - Row Components
+
     @ViewBuilder
-    private func sidebarItem(tab: DashboardTab, icon: String, label: String) -> some View {
-        let isSelected = appState.selectedTab == tab
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                appState.selectedTab = tab
-            }
-        } label: {
+    private func sidebarItem(tab: DashboardTab, icon: String, label: String, action: @escaping () -> Void) -> some View {
+        let isSelected = appState.selectedTab == tab && appState.selectedFolderID == nil
+        Button(action: action) {
             HStack(spacing: Theme.spacing12) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .medium))
@@ -217,7 +197,7 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func meetingFilterRow(
+    private func spaceRow(
         icon: String,
         label: String,
         count: Int,
@@ -251,13 +231,26 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
+    private func bottomButton(icon: String, tab: DashboardTab) -> some View {
+        let isSelected = appState.selectedTab == tab
+        Button {
+            appState.selectedTab = tab
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
     private func folderRenameField(folder: MeetingFolder) -> some View {
         HStack(spacing: Theme.spacing8) {
             Image(systemName: "folder")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Theme.accent)
                 .frame(width: sidebarIconColumnWidth)
-            TextField("Folder name", text: $renamingFolderName)
+            TextField("Space name", text: $renamingFolderName)
                 .font(Theme.callout())
                 .textFieldStyle(.plain)
                 .onSubmit {
@@ -277,12 +270,12 @@ struct SidebarView: View {
     }
 
     private func createNewFolder() {
-        if let id = controller.createFolder(name: "New Folder") {
+        if let id = controller.createFolder(name: "New Space") {
             withAnimation(.easeInOut(duration: 0.15)) {
-                meetingsExpanded = true
+                spacesExpanded = true
             }
             renamingFolderID = id
-            renamingFolderName = "New Folder"
+            renamingFolderName = "New Space"
             controller.showMeetingsHome(folderID: id)
         }
     }

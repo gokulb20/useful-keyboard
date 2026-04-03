@@ -34,10 +34,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func build() {
         if let button = statusItem.button {
             if let iconURL = runtime.menuIcon, let image = NSImage(contentsOf: iconURL) {
-                image.isTemplate = false
+                image.isTemplate = true
                 button.image = image
             } else {
-                button.title = "K"
+                button.title = "U"
             }
             button.toolTip = AppIdentity.displayName
         }

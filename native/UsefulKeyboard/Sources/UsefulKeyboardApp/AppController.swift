@@ -361,6 +361,7 @@ final class AppController: NSObject {
         appState.config = config
         appState.isMeetingRecording = isMeetingRecording()
         appState.isChatGPTAuthenticated = chatGPTAuth.isAuthenticated
+        appState.dictationReadiness = DictationReadiness.check(config: config, backend: selectedBackend)
     }
 
     func updateConfig(_ mutate: (inout AppConfig) -> Void) {
@@ -580,6 +581,21 @@ final class AppController: NSObject {
     func showMeetingTemplatesManager() {
         appState.selectedTab = .meetings
         appState.isMeetingTemplatesManagerPresented = true
+    }
+
+    func searchMeetings(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            appState.meetingSearchResults = nil
+            return
+        }
+        let lowered = trimmed.lowercased()
+        let results = appState.meetingRows.filter { meeting in
+            meeting.title.lowercased().contains(lowered)
+                || meeting.rawTranscript.lowercased().contains(lowered)
+                || meeting.formattedNotes.lowercased().contains(lowered)
+        }
+        appState.meetingSearchResults = results
     }
 
     @objc func openPreferences() {
@@ -1174,6 +1190,16 @@ final class AppController: NSObject {
 
     private func handlePrepare() {
         if isMeetingRecording() { return }
+
+        let readiness = DictationReadiness.check(config: config, backend: selectedBackend)
+        if !readiness.isReady {
+            if let first = readiness.issues.first {
+                fputs("[useful-keyboard] dictation blocked: \(first.title)\n", stderr)
+                indicator.showWarning("\(first.title): \(first.message)", icon: "⚠️")
+            }
+            return
+        }
+
         fputs("[useful-keyboard] prepare\n", stderr)
         do {
             try recorder.prepare()

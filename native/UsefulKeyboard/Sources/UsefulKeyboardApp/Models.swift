@@ -203,7 +203,12 @@ struct MeetingSummaryBackendOption: Equatable {
         label: "ChatGPT"
     )
 
-    static let all: [MeetingSummaryBackendOption] = [.openAI, .openRouter, .chatGPT]
+    static let ollama = MeetingSummaryBackendOption(
+        backend: "ollama",
+        label: "Ollama (Local)"
+    )
+
+    static let all: [MeetingSummaryBackendOption] = [.openAI, .openRouter, .chatGPT, .ollama]
 }
 
 struct CustomWord: Codable, Equatable, Identifiable {
@@ -279,7 +284,8 @@ struct AppConfig: Codable {
     var contextProfiles: [ContextProfile] = ContextProfile.defaults
     var contextRules: [ContextRule] = ContextRule.defaults
     var enableContextDetection: Bool = true
-    var ollamaModel: String = "llama3.2:1b"
+    var ollamaModel: String = "llama3.2:3b"
+    var ollamaBaseURL: String = "http://localhost:11434"
 
     enum CodingKeys: String, CodingKey {
         case dictationHotkey = "dictation_hotkey"
@@ -314,6 +320,7 @@ struct AppConfig: Codable {
         case contextRules = "context_rules"
         case enableContextDetection = "enable_context_detection"
         case ollamaModel = "ollama_model"
+        case ollamaBaseURL = "ollama_base_url"
     }
 
     init() {}
@@ -353,6 +360,7 @@ struct AppConfig: Codable {
         contextRules = (try? c.decode([ContextRule].self, forKey: .contextRules)) ?? defaults.contextRules
         enableContextDetection = (try? c.decode(Bool.self, forKey: .enableContextDetection)) ?? defaults.enableContextDetection
         ollamaModel = (try? c.decode(String.self, forKey: .ollamaModel)) ?? defaults.ollamaModel
+        ollamaBaseURL = (try? c.decode(String.self, forKey: .ollamaBaseURL)) ?? defaults.ollamaBaseURL
     }
 }
 

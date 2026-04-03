@@ -39,6 +39,15 @@ enum MeetingSummaryClient {
                 template: template
             )
         }
+        if backend == MeetingSummaryBackendOption.ollama.backend {
+            return await summarizeWithOllama(
+                transcript: transcript,
+                meetingTitle: meetingTitle,
+                existingNotes: existingNotes,
+                config: config,
+                template: template
+            )
+        }
         if backend == MeetingSummaryBackendOption.openRouter.backend {
             return await summarizeWithOpenRouter(
                 transcript: transcript,
@@ -330,6 +339,10 @@ enum MeetingSummaryClient {
             return await generateTitleWithChatGPT(transcript: truncated, config: config)
         }
 
+        if backend == MeetingSummaryBackendOption.ollama.backend {
+            return await generateTitleWithOllama(transcript: truncated, config: config)
+        }
+
         if backend == MeetingSummaryBackendOption.openRouter.backend {
             let apiKey = ProcessInfo.processInfo.environment["OPENROUTER_API_KEY"] ?? config.openRouterAPIKey
             guard !apiKey.isEmpty else { return nil }
@@ -432,5 +445,86 @@ enum MeetingSummaryClient {
 
     private static func rawTranscriptFallback(transcript: String, meetingTitle: String) -> String {
         "## Raw Transcript\n\n\(transcript)"
+    }
+
+    // MARK: - Ollama
+
+    private static func summarizeWithOllama(
+        transcript: String,
+        meetingTitle: String,
+        existingNotes: String?,
+        config: AppConfig,
+        template: MeetingTemplateSnapshot
+    ) async -> String {
+        let instructions = summaryInstructions(for: template, existingNotes: existingNotes)
+        let userPrompt = "Meeting: \(meetingTitle)\n\nTranscript:\n\(transcript)"
+        let model = config.ollamaModel.isEmpty ? "llama3.2:3b" : config.ollamaModel
+
+        guard let result = await callOllama(
+            baseURL: config.ollamaBaseURL,
+            model: model,
+            systemPrompt: instructions,
+            userPrompt: userPrompt
+        ) else {
+            return rawTranscriptFallback(transcript: transcript, meetingTitle: meetingTitle)
+        }
+        return result
+    }
+
+    private static func generateTitleWithOllama(transcript: String, config: AppConfig) async -> String? {
+        let model = config.ollamaModel.isEmpty ? "llama3.2:3b" : config.ollamaModel
+        return await callOllama(
+            baseURL: config.ollamaBaseURL,
+            model: model,
+            systemPrompt: titleInstructions,
+            userPrompt: transcript
+        )
+    }
+
+    private static func callOllama(
+        baseURL: String,
+        model: String,
+        systemPrompt: String,
+        userPrompt: String
+    ) async -> String? {
+        let urlString = baseURL.hasSuffix("/") ? "\(baseURL)api/chat" : "\(baseURL)/api/chat"
+        guard let url = URL(string: urlString) else {
+            fputs("[summary] invalid Ollama URL: \(urlString)\n", stderr)
+            return nil
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userPrompt],
+            ],
+            "stream": false,
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                fputs("[summary] Ollama returned status \((response as? HTTPURLResponse)?.statusCode ?? -1)\n", stderr)
+                return nil
+            }
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let message = json["message"] as? [String: Any],
+                  let content = message["content"] as? String
+            else {
+                fputs("[summary] Ollama response parse failed\n", stderr)
+                return nil
+            }
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            fputs("[summary] Ollama request failed: \(error)\n", stderr)
+            return nil
+        }
     }
 }

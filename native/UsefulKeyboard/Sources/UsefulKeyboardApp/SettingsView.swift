@@ -176,6 +176,32 @@ struct SettingsView: View {
                                 presets: SummaryModelPreset.chatGPTModels
                             ) { val in controller.updateConfig { $0.chatGPTModel = val } }
                         }
+                    } else if appState.selectedMeetingSummaryBackend == .ollama {
+                        settingsRow("Ollama URL") {
+                            TextField("http://localhost:11434", text: Binding(
+                                get: { appState.config.ollamaBaseURL },
+                                set: { val in controller.updateConfig { $0.ollamaBaseURL = val } }
+                            ))
+                            .font(Theme.body())
+                            .textFieldStyle(.plain)
+                            .frame(width: controlWidth, height: 22)
+                        }
+                        Divider().background(Theme.surfaceBorder)
+                        settingsRow("Model") {
+                            TextField("llama3.2:3b", text: Binding(
+                                get: { appState.config.ollamaModel },
+                                set: { val in controller.updateConfig { $0.ollamaModel = val } }
+                            ))
+                            .font(Theme.body())
+                            .textFieldStyle(.plain)
+                            .frame(width: controlWidth, height: 22)
+                        }
+                        Divider().background(Theme.surfaceBorder)
+                        settingsRow("Status") {
+                            Text("Ensure Ollama is running locally")
+                                .font(Theme.caption())
+                                .foregroundStyle(Theme.textTertiary)
+                        }
                     } else if appState.selectedMeetingSummaryBackend == .openAI {
                         settingsRow("API Key") {
                             PastableSecureField(
