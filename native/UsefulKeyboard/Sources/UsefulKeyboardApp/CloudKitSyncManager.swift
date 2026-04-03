@@ -67,7 +67,7 @@ final class CloudKitSyncManager: ObservableObject {
                 syncStatus = .disabled
             }
         } catch {
-            fputs("[muesli-sync] account status check failed: \(error)\n", stderr)
+            fputs("[useful-keyboard-sync] account status check failed: \(error)\n", stderr)
             iCloudAvailable = false
             syncStatus = .disabled
         }
@@ -82,7 +82,7 @@ final class CloudKitSyncManager: ObservableObject {
         } catch let error as CKError where error.code == .serverRejectedRequest {
             // Zone may already exist, which is fine.
         } catch {
-            fputs("[muesli-sync] zone creation failed: \(error)\n", stderr)
+            fputs("[useful-keyboard-sync] zone creation failed: \(error)\n", stderr)
         }
     }
 
@@ -141,7 +141,7 @@ final class CloudKitSyncManager: ObservableObject {
                 }
             }
         } catch {
-            fputs("[muesli-sync] push failed for \(event): \(error)\n", stderr)
+            fputs("[useful-keyboard-sync] push failed for \(event): \(error)\n", stderr)
             syncStatus = .error("Push failed")
         }
     }
@@ -164,7 +164,7 @@ final class CloudKitSyncManager: ObservableObject {
                 operation.qualityOfService = .utility
                 try await privateDB.modifyRecords(saving: records, deleting: [], savePolicy: .changedKeys)
             } catch {
-                fputs("[muesli-sync] custom words push failed: \(error)\n", stderr)
+                fputs("[useful-keyboard-sync] custom words push failed: \(error)\n", stderr)
             }
         }
     }
@@ -182,37 +182,7 @@ final class CloudKitSyncManager: ObservableObject {
 
             let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [zoneID], configurationsByRecordZoneID: [zoneID: config])
 
-            var changedRecords: [CKRecord] = []
-            var newToken: CKServerChangeToken?
-
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                operation.recordWasChangedBlock = { _, result in
-                    if case .success(let record) = result {
-                        changedRecords.append(record)
-                    }
-                }
-
-                operation.recordZoneFetchResultBlock = { _, result in
-                    switch result {
-                    case .success((let serverChangeToken, _)):
-                        newToken = serverChangeToken
-                    case .failure(let error):
-                        fputs("[muesli-sync] zone fetch error: \(error)\n", stderr)
-                    }
-                }
-
-                operation.fetchRecordZoneChangesResultBlock = { result in
-                    switch result {
-                    case .success:
-                        continuation.resume()
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
-                }
-
-                operation.qualityOfService = .utility
-                privateDB.add(operation)
-            }
+            let (changedRecords, newToken) = try await fetchZoneChanges(operation: operation)
 
             // Process received records
             for record in changedRecords {
@@ -226,9 +196,9 @@ final class CloudKitSyncManager: ObservableObject {
             syncStatus = .idle
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: lastSyncDateKey)
-            MuesliNotifications.postDataDidChange()
+            AppNotifications.postDataDidChange()
         } catch {
-            fputs("[muesli-sync] pull failed: \(error)\n", stderr)
+            fputs("[useful-keyboard-sync] pull failed: \(error)\n", stderr)
             syncStatus = .error("Pull failed")
         }
     }
@@ -286,7 +256,7 @@ final class CloudKitSyncManager: ObservableObject {
             lastSyncDate = Date()
             UserDefaults.standard.set(lastSyncDate, forKey: lastSyncDateKey)
         } catch {
-            fputs("[muesli-sync] initial sync failed: \(error)\n", stderr)
+            fputs("[useful-keyboard-sync] initial sync failed: \(error)\n", stderr)
             syncStatus = .error("Initial sync failed")
         }
     }
@@ -412,7 +382,7 @@ final class CloudKitSyncManager: ObservableObject {
             }
 
         default:
-            fputs("[muesli-sync] unknown record type: \(record.recordType)\n", stderr)
+            fputs("[useful-keyboard-sync] unknown record type: \(record.recordType)\n", stderr)
         }
     }
 
@@ -433,6 +403,47 @@ final class CloudKitSyncManager: ObservableObject {
     }
 
     // MARK: - Remote Notification
+
+    private struct ZoneFetchResult: Sendable {
+        let records: [CKRecord]
+        let token: CKServerChangeToken?
+    }
+
+    private func fetchZoneChanges(operation: CKFetchRecordZoneChangesOperation) async throws -> (records: [CKRecord], token: CKServerChangeToken?) {
+        nonisolated(unsafe) var records: [CKRecord] = []
+        nonisolated(unsafe) var token: CKServerChangeToken?
+        let db = self.privateDB
+
+        operation.recordWasChangedBlock = { _, result in
+            if case .success(let record) = result {
+                records.append(record)
+            }
+        }
+
+        operation.recordZoneFetchResultBlock = { (_: CKRecordZone.ID, result: Result<(serverChangeToken: CKServerChangeToken, clientChangeTokenData: Data?, moreComing: Bool), any Error>) in
+            switch result {
+            case .success(let value):
+                token = value.serverChangeToken
+            case .failure(let error):
+                fputs("[useful-keyboard-sync] zone fetch error: \(error)\n", stderr)
+            }
+        }
+
+        let _: Void = try await withCheckedThrowingContinuation { continuation in
+            operation.fetchRecordZoneChangesResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume(returning: ())
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            operation.qualityOfService = .utility
+            db.add(operation)
+        }
+
+        return (records, token)
+    }
 
     func handleRemoteNotification(userInfo: [String: Any]) {
         let notification = CKNotification(fromRemoteNotificationDictionary: userInfo)

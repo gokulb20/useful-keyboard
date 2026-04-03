@@ -30,11 +30,11 @@ struct CloudSyncStatusView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MuesliTheme.spacing12) {
+        VStack(alignment: .leading, spacing: Theme.spacing12) {
             HStack {
                 Text("iCloud Sync")
-                    .font(MuesliTheme.body())
-                    .foregroundStyle(MuesliTheme.textPrimary)
+                    .font(Theme.body())
+                    .foregroundStyle(Theme.textPrimary)
                 Spacer()
                 HStack(spacing: 8) {
                     Circle()
@@ -42,14 +42,14 @@ struct CloudSyncStatusView: View {
                         .frame(width: 8, height: 8)
                     Text(statusLabel)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(MuesliTheme.textSecondary)
+                        .foregroundStyle(Theme.textSecondary)
                 }
             }
 
             if let lastSync = syncManager.lastSyncDate {
                 Text("Last synced \(lastSync, style: .relative) ago")
-                    .font(MuesliTheme.callout())
-                    .foregroundStyle(MuesliTheme.textTertiary)
+                    .font(Theme.callout())
+                    .foregroundStyle(Theme.textTertiary)
             }
 
             if syncManager.syncStatus == .idle, syncManager.iCloudAvailable {
@@ -59,14 +59,14 @@ struct CloudSyncStatusView: View {
                     }
                 }
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(MuesliTheme.textPrimary)
-                .padding(.horizontal, MuesliTheme.spacing16)
-                .padding(.vertical, MuesliTheme.spacing8)
-                .background(MuesliTheme.surfacePrimary)
-                .clipShape(RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall))
+                .foregroundStyle(Theme.textPrimary)
+                .padding(.horizontal, Theme.spacing16)
+                .padding(.vertical, Theme.spacing8)
+                .background(Theme.surfacePrimary)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
                 .overlay(
-                    RoundedRectangle(cornerRadius: MuesliTheme.cornerSmall)
-                        .strokeBorder(MuesliTheme.surfaceBorder, lineWidth: 1)
+                    RoundedRectangle(cornerRadius: Theme.cornerSmall)
+                        .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
                 )
                 .buttonStyle(.plain)
             }

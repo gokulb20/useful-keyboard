@@ -82,7 +82,7 @@ final class CalendarMonitor {
     /// Extract rich context from an EKEvent.
     private func richContext(from event: EKEvent) -> RichCalendarContext {
         let attendeeNames = event.attendees?.compactMap { participant -> String? in
-            participant.name ?? participant.url?.absoluteString
+            participant.name ?? participant.url.absoluteString
         } ?? []
 
         return RichCalendarContext(
