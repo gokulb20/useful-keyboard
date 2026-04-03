@@ -79,7 +79,10 @@ struct MeetingListItemView: View {
         }
         .padding(.horizontal, Theme.spacing16)
         .padding(.vertical, 10)
-        .background(isSelected ? Theme.surfaceSelected : Color.clear)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cornerSmall)
+                .fill(isSelected ? Theme.surfaceSelected : (isHovering ? Theme.backgroundHover : Color.clear))
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }

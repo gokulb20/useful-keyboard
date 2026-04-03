@@ -170,7 +170,10 @@ if [[ "$SKIP_SIGN" != "1" ]]; then
   fi
   echo "  Deep signature valid."
 else
-  echo "Skipping codesign because UK_SKIP_SIGN=1"
+  echo "Skipping developer codesign (UK_SKIP_SIGN=1), applying ad-hoc sign for stable identity..."
+  codesign --force --sign - "$APP_DIR/Contents/MacOS/$CLI_BINARY" 2>/dev/null
+  codesign --force --sign - "$APP_DIR"
+  echo "  Ad-hoc signed as $(codesign -d --verbose=0 "$APP_DIR" 2>&1 | sed -n 's/.*Identifier=//p' || echo 'com.usefulkeyboard.app')"
 fi
 
 rm -rf "$STAGED_APP_DIR"

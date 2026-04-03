@@ -571,6 +571,29 @@ final class AppController: NSObject {
         appState.meetingsNavigationState = .browser
     }
 
+    func createQuickNote() {
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d 'at' h:mm a"
+        let title = "Quick note \u{2014} \(formatter.string(from: now))"
+        do {
+            let id = try dictationStore.insertMeeting(
+                title: title,
+                calendarEventID: nil,
+                startTime: now,
+                endTime: now,
+                rawTranscript: "",
+                formattedNotes: "",
+                micAudioPath: nil,
+                systemAudioPath: nil
+            )
+            syncAppState()
+            showMeetingDocument(id: id)
+        } catch {
+            fputs("[useful-keyboard] quick note creation failed: \(error)\n", stderr)
+        }
+    }
+
     func showMeetingDocument(id: Int64) {
         appState.selectedTab = .meetings
         appState.selectedMeetingID = id

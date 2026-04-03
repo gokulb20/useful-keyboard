@@ -93,67 +93,52 @@ struct MeetingDetailView: View {
     private func header(_ meeting: MeetingRecord) -> some View {
         let appliedTemplate = controller.meetingTemplateSnapshot(for: meeting)
         VStack(alignment: .leading, spacing: Theme.spacing16) {
-            if let onBack {
-                Button(action: onBack) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("Back to Meetings")
-                            .font(Theme.callout())
+            // Top toolbar
+            HStack {
+                if let onBack {
+                    Button(action: onBack) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 10, weight: .semibold))
+                            Image(systemName: "house")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundStyle(Theme.textTertiary)
                     }
-                    .foregroundStyle(Theme.textSecondary)
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+
+                Spacer()
+
+                HStack(spacing: Theme.spacing8) {
+                    documentModePicker
+                    templateMenu(for: meeting, appliedTemplate: appliedTemplate)
+                    summaryAction(for: meeting)
+                    editButton(for: meeting)
+                    deleteButton
+                }
             }
 
-            HStack(alignment: .top, spacing: Theme.spacing24) {
-                VStack(alignment: .leading, spacing: Theme.spacing8) {
-                    TextField("Meeting Title", text: $editableTitle)
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .textFieldStyle(.plain)
-                        .onSubmit {
-                            controller.updateMeetingTitle(id: meeting.id, title: editableTitle)
-                        }
-                        .onChange(of: editableTitle) { _, _ in
-                            debounceSaveTitle(meetingID: meeting.id)
-                        }
-
-                    HStack(spacing: Theme.spacing8) {
-                        Text(formatMeta(meeting))
-                            .font(Theme.callout())
-                            .foregroundStyle(Theme.textSecondary)
-                        templateChip(for: appliedTemplate)
-                    }
+            // Title
+            TextField("Meeting Title", text: $editableTitle)
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(Theme.textPrimary)
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    controller.updateMeetingTitle(id: meeting.id, title: editableTitle)
+                }
+                .onChange(of: editableTitle) { _, _ in
+                    debounceSaveTitle(meetingID: meeting.id)
                 }
 
-                Spacer(minLength: Theme.spacing16)
-
-                VStack(alignment: .trailing, spacing: 10) {
-                    documentModePicker
-
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: Theme.spacing8) {
-                            templateMenu(for: meeting, appliedTemplate: appliedTemplate)
-                            recordingAction(for: meeting)
-                            summaryAction(for: meeting)
-                            editButton(for: meeting)
-                            deleteButton
-                        }
-
-                        VStack(alignment: .trailing, spacing: Theme.spacing8) {
-                            HStack(spacing: Theme.spacing8) {
-                                templateMenu(for: meeting, appliedTemplate: appliedTemplate)
-                                recordingAction(for: meeting)
-                                summaryAction(for: meeting)
-                            }
-                            HStack(spacing: Theme.spacing8) {
-                                editButton(for: meeting)
-                                deleteButton
-                            }
-                        }
-                    }
+            // Metadata chips (Granola-style)
+            HStack(spacing: Theme.spacing8) {
+                metadataChip(icon: "calendar", text: formatDateChip(meeting.startTime))
+                metadataChip(icon: "clock", text: formatDurationChip(meeting.durationSeconds))
+                if meeting.wordCount > 0 {
+                    metadataChip(icon: "text.word.spacing", text: "\(meeting.wordCount) words")
                 }
+                templateChip(for: appliedTemplate)
             }
 
             if isRawTranscript(meeting) && documentMode == .notes {
@@ -162,8 +147,38 @@ struct MeetingDetailView: View {
         }
         .frame(maxWidth: 980, alignment: .leading)
         .padding(.horizontal, 40)
-        .padding(.vertical, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private func metadataChip(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(text)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Theme.backgroundRaised)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(Theme.surfaceBorder, lineWidth: 0.5))
+    }
+
+    private func formatDateChip(_ raw: String) -> String {
+        guard let date = MeetingBrowserLogic.parseDate(raw) else { return raw }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
+    }
+
+    private func formatDurationChip(_ seconds: Double) -> String {
+        let m = Int(seconds) / 60
+        if m >= 60 { return "\(m / 60)h \(m % 60)m" }
+        return "\(m)m"
     }
 
     @ViewBuilder

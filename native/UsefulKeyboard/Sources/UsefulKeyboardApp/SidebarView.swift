@@ -196,6 +196,24 @@ struct SidebarView: View {
         .padding(.horizontal, sidebarRowOuterPadding)
     }
 
+    private func spaceColor(for name: String) -> Color {
+        let hash = abs(name.hashValue)
+        let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .teal, .yellow, .mint]
+        return colors[hash % colors.count]
+    }
+
+    private func spaceIcon(for name: String) -> String {
+        let lowered = name.lowercased()
+        if lowered.contains("customer") || lowered.contains("client") { return "person.2" }
+        if lowered.contains("intern") || lowered.contains("interview") { return "star" }
+        if lowered.contains("standup") || lowered.contains("stand-up") { return "wrench" }
+        if lowered.contains("project") { return "square.grid.2x2" }
+        if lowered.contains("team") { return "person.3" }
+        if lowered.contains("webinar") { return "squares.leading.rectangle" }
+        if lowered.contains("note") || lowered.contains("my ") { return "lock" }
+        return "folder"
+    }
+
     @ViewBuilder
     private func spaceRow(
         icon: String,
@@ -204,10 +222,12 @@ struct SidebarView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
+        let resolvedIcon = icon == "folder" ? spaceIcon(for: label) : icon
+        let iconColor = icon == "folder" ? spaceColor(for: label) : (isSelected ? Theme.accent : Theme.textTertiary)
         HStack(spacing: Theme.spacing8) {
-            Image(systemName: icon)
+            Image(systemName: resolvedIcon)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? Theme.accent : Theme.textTertiary)
+                .foregroundStyle(iconColor)
                 .frame(width: sidebarIconColumnWidth)
             Text(label)
                 .font(Theme.callout())

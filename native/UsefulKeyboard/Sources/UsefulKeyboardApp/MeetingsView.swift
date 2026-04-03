@@ -270,36 +270,34 @@ struct MeetingsView: View {
 
     @ViewBuilder
     private var dateGroupedMeetingList: some View {
-        LazyVStack(alignment: .leading, spacing: Theme.spacing24) {
+        LazyVStack(alignment: .leading, spacing: Theme.spacing20) {
             ForEach(groupedMeetings, id: \.key) { group in
-                VStack(alignment: .leading, spacing: Theme.spacing8) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(group.key)
-                        .font(Theme.headline())
-                        .foregroundStyle(Theme.textSecondary)
+                        .font(Theme.callout())
+                        .foregroundStyle(Theme.textTertiary)
                         .padding(.leading, 4)
+                        .padding(.bottom, 6)
 
-                    VStack(spacing: 1) {
-                        ForEach(group.meetings) { meeting in
-                            MeetingListItemView(
-                                record: meeting,
-                                isSelected: appState.selectedMeetingID == meeting.id,
-                                folders: appState.folders,
-                                onSelect: { controller.showMeetingDocument(id: meeting.id) },
-                                onMove: { folderID in
-                                    controller.moveMeeting(id: meeting.id, toFolder: folderID)
-                                },
-                                onDelete: {
-                                    controller.deleteMeeting(id: meeting.id)
-                                }
-                            )
+                    ForEach(Array(group.meetings.enumerated()), id: \.element.id) { index, meeting in
+                        MeetingListItemView(
+                            record: meeting,
+                            isSelected: appState.selectedMeetingID == meeting.id,
+                            folders: appState.folders,
+                            onSelect: { controller.showMeetingDocument(id: meeting.id) },
+                            onMove: { folderID in
+                                controller.moveMeeting(id: meeting.id, toFolder: folderID)
+                            },
+                            onDelete: {
+                                controller.deleteMeeting(id: meeting.id)
+                            }
+                        )
+                        if index < group.meetings.count - 1 {
+                            Divider()
+                                .background(Theme.surfaceBorder)
+                                .padding(.leading, 52)
                         }
                     }
-                    .background(Theme.backgroundRaised)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerMedium))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cornerMedium)
-                            .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
-                    )
                 }
             }
         }
@@ -307,85 +305,41 @@ struct MeetingsView: View {
 
     @ViewBuilder
     private var browserHeader: some View {
-        VStack(alignment: .leading, spacing: Theme.spacing8) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: Theme.spacing16) {
-                    browserHeaderTitle
-                    Spacer(minLength: Theme.spacing16)
-                    browserHeaderActions
-                }
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(currentFolderName)
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+            }
 
-                VStack(alignment: .leading, spacing: Theme.spacing12) {
-                    browserHeaderTitle
-                    HStack {
-                        Spacer(minLength: 0)
-                        browserHeaderActions
+            Spacer()
+
+            HStack(spacing: Theme.spacing8) {
+                sortButton
+                dateFilterButton
+
+                Button {
+                    controller.createQuickNote()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Quick note")
+                            .font(.system(size: 12, weight: .semibold))
                     }
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Theme.surfacePrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.cornerSmall)
+                            .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
+                    )
                 }
+                .buttonStyle(.plain)
             }
-
-            browserHeaderMeta
         }
-    }
-
-    @ViewBuilder
-    private var browserHeaderTitle: some View {
-        Text(currentFolderName)
-            .font(.system(size: 30, weight: .bold))
-            .foregroundStyle(Theme.textPrimary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var browserHeaderMeta: some View {
-        HStack(spacing: Theme.spacing8) {
-            Text("\(filteredMeetings.count) meeting\(filteredMeetings.count == 1 ? "" : "s")")
-                .font(Theme.callout())
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize()
-
-            Text("\u{2022}")
-                .font(Theme.callout())
-                .foregroundStyle(Theme.textTertiary)
-                .fixedSize()
-
-            Text("Open a meeting to review notes, transcript, and template-driven summaries")
-                .font(Theme.callout())
-                .foregroundStyle(Theme.textTertiary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var browserHeaderActions: some View {
-        HStack(spacing: Theme.spacing8) {
-            sortButton
-            dateFilterButton
-
-            Button {
-                controller.showMeetingTemplatesManager()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 11, weight: .medium))
-                    Text("Manage Templates")
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(Theme.textPrimary)
-                .padding(.horizontal, Theme.spacing12)
-                .padding(.vertical, 8)
-                .background(Theme.surfacePrimary)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerSmall))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.cornerSmall)
-                        .strokeBorder(Theme.surfaceBorder, lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-            .fixedSize()
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
