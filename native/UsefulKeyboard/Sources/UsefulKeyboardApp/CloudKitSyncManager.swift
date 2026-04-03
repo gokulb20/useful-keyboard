@@ -17,17 +17,28 @@ final class CloudKitSyncManager: ObservableObject {
         case disabled
     }
 
-    private let container = CKContainer(identifier: "iCloud.ai.useful.keyboard")
-    private var privateDB: CKDatabase { container.privateCloudDatabase }
+    private lazy var container: CKContainer? = {
+        // CKContainer traps if the app isn't signed with the iCloud entitlement.
+        // Guard against unsigned/debug builds.
+        guard let entitlements = Bundle.main.infoDictionary,
+              let containers = entitlements["com.apple.developer.icloud-container-identifiers"] as? [String],
+              !containers.isEmpty else {
+            // Also try: just attempt to create and catch any trap.
+            // For safety in unsigned builds, return nil.
+            return nil
+        }
+        return CKContainer(identifier: "iCloud.ai.useful.keyboard")
+    }()
+    private var privateDB: CKDatabase? { container?.privateCloudDatabase }
     private let zoneName = "MuesliZone"
     private lazy var zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName)
 
     private var store: DictationStore?
     var onCustomWordsReceived: (([CustomWord]) -> Void)?
 
-    private let changeTokenKey = "com.muesli.cloudkit.changeToken"
-    private let initialSyncCompleteKey = "com.muesli.cloudkit.initialSyncComplete"
-    private let lastSyncDateKey = "com.muesli.cloudkit.lastSyncDate"
+    private let changeTokenKey = "com.usefulkeyboard.cloudkit.changeToken"
+    private let initialSyncCompleteKey = "com.usefulkeyboard.cloudkit.initialSyncComplete"
+    private let lastSyncDateKey = "com.usefulkeyboard.cloudkit.lastSyncDate"
     private let batchSize = 50
 
     private init() {
@@ -57,6 +68,11 @@ final class CloudKitSyncManager: ObservableObject {
     // MARK: - Account Status
 
     private func checkAccountStatus() async {
+        guard let container else {
+            iCloudAvailable = false
+            syncStatus = .disabled
+            return
+        }
         do {
             let status = try await container.accountStatus()
             switch status {
@@ -76,6 +92,7 @@ final class CloudKitSyncManager: ObservableObject {
     // MARK: - Zone Management
 
     private func createZoneIfNeeded() async {
+        guard let privateDB else { return }
         let zone = CKRecordZone(zoneID: zoneID)
         do {
             _ = try await privateDB.save(zone)
@@ -89,7 +106,7 @@ final class CloudKitSyncManager: ObservableObject {
     // MARK: - Push
 
     func pushRecord(event: SyncEvent) async {
-        guard iCloudAvailable, let store else { return }
+        guard iCloudAvailable, let store, let privateDB else { return }
 
         do {
             switch event {
@@ -147,7 +164,7 @@ final class CloudKitSyncManager: ObservableObject {
     }
 
     func pushCustomWords(_ words: [CustomWord]) {
-        guard iCloudAvailable else { return }
+        guard iCloudAvailable, let privateDB else { return }
         Task {
             do {
                 var records: [CKRecord] = []
@@ -172,7 +189,7 @@ final class CloudKitSyncManager: ObservableObject {
     // MARK: - Pull
 
     func pullChanges() async {
-        guard iCloudAvailable, let store else { return }
+        guard iCloudAvailable, let store, let privateDB else { return }
         syncStatus = .syncing
 
         do {
@@ -206,7 +223,7 @@ final class CloudKitSyncManager: ObservableObject {
     // MARK: - Initial Sync (Batch Upload)
 
     private func performInitialSync() async {
-        guard iCloudAvailable, let store else { return }
+        guard iCloudAvailable, let store, let privateDB else { return }
         guard !UserDefaults.standard.bool(forKey: initialSyncCompleteKey) else { return }
 
         syncStatus = .syncing
@@ -412,7 +429,7 @@ final class CloudKitSyncManager: ObservableObject {
     private func fetchZoneChanges(operation: CKFetchRecordZoneChangesOperation) async throws -> (records: [CKRecord], token: CKServerChangeToken?) {
         nonisolated(unsafe) var records: [CKRecord] = []
         nonisolated(unsafe) var token: CKServerChangeToken?
-        let db = self.privateDB
+        guard let db = self.privateDB else { return ([], nil) }
 
         operation.recordWasChangedBlock = { _, result in
             if case .success(let record) = result {
