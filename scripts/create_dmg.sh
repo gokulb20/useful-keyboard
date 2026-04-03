@@ -5,9 +5,9 @@ set -euo pipefail
 # Usage: ./scripts/create_dmg.sh [app_path] [output_dir]
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_PATH="${1:-/Applications/Muesli.app}"
+APP_PATH="${1:-/Applications/Useful Keyboard.app}"
 OUTPUT_DIR="${2:-$ROOT/dist-release}"
-SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)}"
+SIGN_IDENTITY="${UK_SIGN_IDENTITY:-Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)}"
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "App not found: $APP_PATH" >&2
@@ -16,7 +16,7 @@ fi
 
 # Extract version from Info.plist
 VERSION=$(defaults read "$APP_PATH/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "0.0.0")
-APP_NAME=$(defaults read "$APP_PATH/Contents/Info" CFBundleDisplayName 2>/dev/null || echo "Muesli")
+APP_NAME=$(defaults read "$APP_PATH/Contents/Info" CFBundleDisplayName 2>/dev/null || echo "Useful Keyboard")
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 
 mkdir -p "$OUTPUT_DIR"

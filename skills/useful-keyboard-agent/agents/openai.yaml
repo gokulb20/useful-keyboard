@@ -1,0 +1,4 @@
+interface:
+  display_name: "Useful Keyboard Agent"
+  short_description: "Inspect and summarize local Useful Keyboard transcripts and notes"
+  default_prompt: "Use the local Useful Keyboard CLI to inspect meetings or dictations, analyze them with your own model, and write notes back when requested."

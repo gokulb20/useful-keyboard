@@ -21,7 +21,7 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - Developer ID cert in keychain
-#   - Notary profile stored: xcrun notarytool store-credentials MuesliNotary
+#   - Notary profile stored: xcrun notarytool store-credentials UsefulKeyboardNotary
 #   - gh CLI authenticated
 #
 # Usage: ./scripts/release.sh [version]
@@ -30,14 +30,14 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-PROFILE_NAME="${MUESLI_NOTARY_PROFILE:-MuesliNotary}"
-SIGN_IDENTITY="${MUESLI_SIGN_IDENTITY:-Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)}"
-APP_DIR="/Applications/Muesli.app"
+PROFILE_NAME="${UK_NOTARY_PROFILE:-UsefulKeyboardNotary}"
+SIGN_IDENTITY="${UK_SIGN_IDENTITY:-Developer ID Application: Pranav Hari Guruvayurappan (58W55QJ567)}"
+APP_DIR="/Applications/Useful Keyboard.app"
 OUTPUT_DIR="$ROOT/dist-release"
-GENERATE_APPCAST="$ROOT/native/MuesliNative/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
-TAP_REPO="${MUESLI_TAP_REPO:-pHequals7/homebrew-muesli}"
-TAP_CASK_REL_PATH="${MUESLI_TAP_CASK_REL_PATH:-Casks/m/muesli.rb}"
-SKIP_TAP_UPDATE="${MUESLI_SKIP_TAP_UPDATE:-0}"
+GENERATE_APPCAST="$ROOT/native/UsefulKeyboard/.build/artifacts/sparkle/Sparkle/bin/generate_appcast"
+TAP_REPO="${UK_TAP_REPO:-gokulb20/homebrew-useful-keyboard}"
+TAP_CASK_REL_PATH="${UK_TAP_CASK_REL_PATH:-Casks/u/useful-keyboard.rb}"
+SKIP_TAP_UPDATE="${UK_SKIP_TAP_UPDATE:-0}"
 VERIFY_DIR=""
 HOSTED_MOUNT_POINT=""
 TAP_WORK_DIR=""
@@ -89,17 +89,17 @@ if [[ ! -x "$GENERATE_APPCAST" ]]; then
   exit 1
 fi
 
-DOWNLOAD_URL="https://github.com/pHequals7/muesli/releases/download/v${VERSION}/Muesli-${VERSION}.dmg"
+DOWNLOAD_URL="https://github.com/gokulb20/useful-keyboard/releases/download/v${VERSION}/Useful-Keyboard-${VERSION}.dmg"
 TAG="v${VERSION}"
-RELEASE_TITLE="Muesli ${VERSION}"
+RELEASE_TITLE="Useful Keyboard ${VERSION}"
 RELEASE_NOTES="$(cat <<EOF
-## Muesli ${VERSION}
+## Useful Keyboard ${VERSION}
 
 Native macOS app — dictation + meeting transcription on Apple Silicon.
 
 ### Install
-1. Download \`Muesli-${VERSION}.dmg\`
-2. Open the DMG and drag Muesli to Applications
+1. Download \`Useful-Keyboard-${VERSION}.dmg\`
+2. Open the DMG and drag Useful Keyboard to Applications
 3. Launch from Applications
 
 Signed, notarized, and stapled by Apple.
@@ -108,7 +108,7 @@ EOF
 
 update_personal_tap() {
   if [[ "$SKIP_TAP_UPDATE" == "1" ]]; then
-    echo "  Skipping personal tap update because MUESLI_SKIP_TAP_UPDATE=1."
+    echo "  Skipping personal tap update because UK_SKIP_TAP_UPDATE=1."
     return 0
   fi
 
@@ -130,12 +130,12 @@ update_personal_tap() {
     return 0
   fi
 
-  git -C "$TAP_WORK_DIR" commit -m "muesli ${VERSION}"
+  git -C "$TAP_WORK_DIR" commit -m "useful-keyboard ${VERSION}"
   git -C "$TAP_WORK_DIR" push origin HEAD
   echo "  Personal tap updated: https://github.com/$TAP_REPO"
 }
 
-echo "=== Muesli Release v${VERSION} ==="
+echo "=== Useful Keyboard Release v${VERSION} ==="
 echo ""
 
 # --- Step 0: Update version in build script ---
@@ -145,7 +145,7 @@ sed -i '' "/CFBundleShortVersionString<\/key>/{n;s/<string>[^<]*<\/string>/<stri
 
 # --- Step 1: Run tests ---
 echo "[1/13] Running tests..."
-swift test --package-path "$ROOT/native/MuesliNative"
+swift test --package-path "$ROOT/native/UsefulKeyboard"
 echo "  Tests passed."
 
 # --- Step 2: Build and sign ---
@@ -159,7 +159,7 @@ echo "  Signature: $FLAGS"
 
 # --- Step 3: Notarize app bundle ---
 echo "[3/13] Notarizing app bundle with Apple (this may take several minutes)..."
-APP_ZIP="$OUTPUT_DIR/Muesli-app-${VERSION}.zip"
+APP_ZIP="$OUTPUT_DIR/Useful-Keyboard-app-${VERSION}.zip"
 ditto -c -k --keepParent "$APP_DIR" "$APP_ZIP"
 NOTARY_OUTPUT=$(xcrun notarytool submit "$APP_ZIP" \
   --keychain-profile "$PROFILE_NAME" \
@@ -184,7 +184,7 @@ echo "  App stapled."
 # --- Step 5: Create DMG from stapled app ---
 echo "[5/13] Creating DMG from stapled app..."
 "$ROOT/scripts/create_dmg.sh" "$APP_DIR" "$OUTPUT_DIR"
-DMG_PATH="$OUTPUT_DIR/Muesli-${VERSION}.dmg"
+DMG_PATH="$OUTPUT_DIR/Useful-Keyboard-${VERSION}.dmg"
 
 # --- Step 6: Notarize DMG ---
 echo "[6/13] Notarizing DMG with Apple..."
@@ -215,10 +215,10 @@ if [[ -z "$MOUNT_POINT" ]]; then
   exit 1
 fi
 
-SPCTL_RESULT=$(spctl -a -vv "$MOUNT_POINT/Muesli.app" 2>&1)
+SPCTL_RESULT=$(spctl -a -vv "$MOUNT_POINT/Useful Keyboard.app" 2>&1)
 echo "  $SPCTL_RESULT"
 
-STAPLE_RESULT=$(xcrun stapler validate "$MOUNT_POINT/Muesli.app" 2>&1)
+STAPLE_RESULT=$(xcrun stapler validate "$MOUNT_POINT/Useful Keyboard.app" 2>&1)
 echo "  $STAPLE_RESULT"
 
 hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null
@@ -288,10 +288,10 @@ echo "  Draft release: $DRAFT_RELEASE_URL"
 # --- Step 10: Verify the hosted draft asset from GitHub Releases ---
 echo "[10/13] Verifying hosted GitHub Release DMG..."
 VERIFY_DIR=$(mktemp -d)
-HOSTED_DMG="$VERIFY_DIR/Muesli-${VERSION}.dmg"
+HOSTED_DMG="$VERIFY_DIR/Useful-Keyboard-${VERSION}.dmg"
 
 gh release download "$TAG" \
-  -p "Muesli-${VERSION}.dmg" \
+  -p "Useful-Keyboard-${VERSION}.dmg" \
   -D "$VERIFY_DIR" \
   --clobber >/dev/null
 
@@ -332,10 +332,10 @@ if [[ -z "$HOSTED_MOUNT_POINT" ]]; then
   exit 1
 fi
 
-HOSTED_APP_SPCTL_RESULT=$(spctl -a -vv "$HOSTED_MOUNT_POINT/Muesli.app" 2>&1)
+HOSTED_APP_SPCTL_RESULT=$(spctl -a -vv "$HOSTED_MOUNT_POINT/Useful Keyboard.app" 2>&1)
 echo "  $HOSTED_APP_SPCTL_RESULT"
 
-HOSTED_APP_STAPLE_RESULT=$(xcrun stapler validate "$HOSTED_MOUNT_POINT/Muesli.app" 2>&1)
+HOSTED_APP_STAPLE_RESULT=$(xcrun stapler validate "$HOSTED_MOUNT_POINT/Useful Keyboard.app" 2>&1)
 echo "  $HOSTED_APP_STAPLE_RESULT"
 
 hdiutil detach "$HOSTED_MOUNT_POINT" -quiet 2>/dev/null
@@ -367,14 +367,14 @@ echo "[12/13] Updating appcast and release metadata..."
 "$GENERATE_APPCAST" "$OUTPUT_DIR" -o "$ROOT/docs/appcast.xml"
 
 # Point appcast enclosures at GitHub Releases, not GitHub Pages.
-perl -0pi -e 's{https://pHequals7\.github\.io/muesli/(Muesli-([0-9][0-9A-Za-z\.\-]*)\.dmg)}{"https://github.com/pHequals7/muesli/releases/download/v$2/$1"}ge' "$ROOT/docs/appcast.xml"
+perl -0pi -e 's{https://gokulb20.github.io/useful-keyboard/(Useful-Keyboard-([0-9][0-9A-Za-z\.\-]*)\.dmg)}{"https://github.com/gokulb20/useful-keyboard/releases/download/v$2/$1"}ge' "$ROOT/docs/appcast.xml"
 
 # Delta artifacts are not hosted, so strip delta enclosures from the appcast.
 perl -0pi -e 's{^\h*<enclosure\b[^>]*\bsparkle:deltaFrom="[^"]*"[^>]*/>\n}{}mg' "$ROOT/docs/appcast.xml"
 
 # Keep the marketing/docs surface aligned with the published GitHub Release.
-sed -i '' "s|https://github.com/pHequals7/muesli/releases/download/[^\"]*\\.dmg|$DOWNLOAD_URL|g" "$ROOT/docs/index.html"
-sed -i '' "s|https://github.com/pHequals7/muesli/releases/download/.*\\.dmg|$DOWNLOAD_URL|g" "$ROOT/docs/llms.txt"
+sed -i '' "s|https://github.com/gokulb20/useful-keyboard/releases/download/[^\"]*\\.dmg|$DOWNLOAD_URL|g" "$ROOT/docs/index.html"
+sed -i '' "s|https://github.com/gokulb20/useful-keyboard/releases/download/.*\\.dmg|$DOWNLOAD_URL|g" "$ROOT/docs/llms.txt"
 
 git add docs/appcast.xml docs/index.html docs/llms.txt
 if git diff --cached --quiet; then

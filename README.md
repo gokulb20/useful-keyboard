@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/muesli_app_icon.png" alt="Muesli" width="128" height="128" />
+  <img src="assets/app-icon.png" alt="Useful Keyboard" width="128" height="128" />
 </p>
 
-<h1 align="center">Muesli</h1>
+<h1 align="center">Useful Keyboard</h1>
 
 <p align="center">
   <strong>Local-first dictation & meeting transcription for macOS</strong><br>
@@ -18,15 +18,15 @@
 
 ---
 
-## What is Muesli?
+## What is Useful Keyboard?
 
-Muesli is a **lightweight native macOS app** that combines **WisprFlow-style dictation** and **Granola-style meeting transcription** in one tool. All transcription runs locally on Apple Silicon — your audio never leaves your device unless you want to (meeting summaries).
+Useful Keyboard is a **lightweight native macOS app** that combines **WisprFlow-style dictation** and **Granola-style meeting transcription** in one tool. All transcription runs locally on Apple Silicon — your audio never leaves your device unless you want to (meeting summaries).
 
 ### Dictation
 Hold your hotkey (or double-tap for hands-free mode) → speak → release → transcribed text is pasted at your cursor. **~0.13 second latency** via Parakeet TDT on the Apple Neural Engine.
 
 ### Meeting Transcription
-Start a meeting recording → Muesli captures your mic (You) and system audio (Others) simultaneously → VAD-driven chunked transcription happens during the meeting at natural speech boundaries → speaker diarization identifies individual remote speakers (Speaker 1, Speaker 2, etc.) → when you stop, the transcript is ready in seconds, not minutes. Generate structured meeting notes via OpenAI, free OpenRouter models, or your ChatGPT Plus/Pro subscription.
+Start a meeting recording → Useful Keyboard captures your mic (You) and system audio (Others) simultaneously → VAD-driven chunked transcription happens during the meeting at natural speech boundaries → speaker diarization identifies individual remote speakers (Speaker 1, Speaker 2, etc.) → when you stop, the transcript is ready in seconds, not minutes. Generate structured meeting notes via OpenAI, free OpenRouter models, or your ChatGPT Plus/Pro subscription.
 
 ---
 
@@ -57,13 +57,13 @@ Start a meeting recording → Muesli captures your mic (You) and system audio (O
 
 ### Download (recommended)
 
-Download the latest `.dmg` from [Releases](https://github.com/pHequals7/muesli/releases), open it, and drag Muesli to your Applications folder.
+Download the latest `.dmg` from [Releases](https://github.com/gokulb20/useful-keyboard/releases), open it, and drag Useful Keyboard to your Applications folder.
 
 ### Homebrew
 
 ```bash
-brew tap pHequals7/muesli
-brew install --cask muesli
+brew tap gokulb20/useful-keyboard
+brew install --cask useful-keyboard
 ```
 
 ### Build from source
@@ -72,8 +72,8 @@ brew install --cask muesli
 
 ```bash
 # Clone
-git clone https://github.com/pHequals7/muesli.git
-cd muesli
+git clone https://github.com/gokulb20/useful-keyboard.git
+cd useful-keyboard
 
 # Build and install to /Applications
 ./scripts/build_native_app.sh
@@ -85,10 +85,10 @@ The transcription model (~450MB for Parakeet v3) downloads automatically on firs
 
 ## Agent CLI
 
-Muesli bundles an agent-friendly local CLI inside the app bundle:
+Useful Keyboard bundles an agent-friendly local CLI inside the app bundle:
 
-- Installed path: `/Applications/Muesli.app/Contents/MacOS/muesli-cli`
-- Dev path: `native/MuesliNative/.build/arm64-apple-macosx/debug/muesli-cli`
+- Installed path: `/Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli`
+- Dev path: `native/UsefulKeyboard/.build/arm64-apple-macosx/debug/useful-keyboard-cli`
 
 The CLI is designed for coding agents such as Codex and Claude Code. It exposes meetings, dictations, raw transcripts, and stored notes as stable JSON so an agent can analyze them with its own model and write notes back without requiring a user-supplied OpenAI or OpenRouter key.
 
@@ -96,37 +96,37 @@ The CLI is designed for coding agents such as Codex and Claude Code. It exposes 
 
 1. Discover the CLI:
    ```bash
-   command -v muesli-cli || echo "/Applications/Muesli.app/Contents/MacOS/muesli-cli"
+   command -v useful-keyboard-cli || echo "/Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli"
    ```
 2. Inspect the command contract:
    ```bash
-   /Applications/Muesli.app/Contents/MacOS/muesli-cli spec
+   /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli spec
    ```
 3. List recent meetings or dictations:
    ```bash
-   /Applications/Muesli.app/Contents/MacOS/muesli-cli meetings list --limit 10
-   /Applications/Muesli.app/Contents/MacOS/muesli-cli dictations list --limit 10
+   /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli meetings list --limit 10
+   /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli dictations list --limit 10
    ```
 4. Fetch a full record:
    ```bash
-   /Applications/Muesli.app/Contents/MacOS/muesli-cli meetings get 125
-   /Applications/Muesli.app/Contents/MacOS/muesli-cli dictations get 42
+   /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli meetings get 125
+   /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli dictations get 42
    ```
 5. Summarize or analyze locally in the agent.
 6. Write improved meeting notes back:
    ```bash
-   cat notes.md | /Applications/Muesli.app/Contents/MacOS/muesli-cli meetings update-notes 125 --stdin
+   cat notes.md | /Applications/Useful Keyboard.app/Contents/MacOS/useful-keyboard-cli meetings update-notes 125 --stdin
    ```
 
 ### Commands
 
-- `muesli-cli spec`
-- `muesli-cli info`
-- `muesli-cli meetings list [--limit N] [--folder-id ID]`
-- `muesli-cli meetings get <id>`
-- `muesli-cli meetings update-notes <id> (--stdin | --file <path>)`
-- `muesli-cli dictations list [--limit N]`
-- `muesli-cli dictations get <id>`
+- `useful-keyboard-cli spec`
+- `useful-keyboard-cli info`
+- `useful-keyboard-cli meetings list [--limit N] [--folder-id ID]`
+- `useful-keyboard-cli meetings get <id>`
+- `useful-keyboard-cli meetings update-notes <id> (--stdin | --file <path>)`
+- `useful-keyboard-cli dictations list [--limit N]`
+- `useful-keyboard-cli dictations get <id>`
 
 ### JSON contract
 
@@ -137,12 +137,12 @@ Success shape:
 ```json
 {
   "ok": true,
-  "command": "muesli-cli meetings get",
+  "command": "useful-keyboard-cli meetings get",
   "data": {},
   "meta": {
     "schemaVersion": 1,
     "generatedAt": "2026-03-17T00:00:00Z",
-    "dbPath": "/Users/example/Library/Application Support/Muesli/muesli.db",
+    "dbPath": "/Users/example/Library/Application Support/Useful Keyboard/useful-keyboard.db",
     "warnings": []
   }
 }
@@ -153,11 +153,11 @@ Failure shape:
 ```json
 {
   "ok": false,
-  "command": "muesli-cli meetings get 999",
+  "command": "useful-keyboard-cli meetings get 999",
   "error": {
     "code": "not_found",
     "message": "No meeting exists with id 999.",
-    "fix": "Run `muesli-cli meetings list` to find a valid ID."
+    "fix": "Run `useful-keyboard-cli meetings list` to find a valid ID."
   },
   "meta": {
     "schemaVersion": 1,
@@ -189,7 +189,7 @@ Important meeting fields:
 - `formattedNotes` is the only write-back surface in v1.
 - `rawTranscript` is read-only and should be treated as source material.
 - If `notesState` is `missing` or `raw_transcript_fallback`, agents should prefer summarizing from `rawTranscript`.
-- Use `--db-path` or `--support-dir` only when the default Muesli data location is wrong.
+- Use `--db-path` or `--support-dir` only when the default Useful Keyboard data location is wrong.
 
 ---
 
@@ -213,7 +213,7 @@ Models download on demand from HuggingFace. Manage them from the **Models** tab 
 
 ## Permissions
 
-Muesli needs these macOS permissions (guided during onboarding):
+Useful Keyboard needs these macOS permissions (guided during onboarding):
 
 | Permission | Why |
 |---|---|
@@ -278,10 +278,10 @@ Everything runs in-process. No subprocesses, no IPC, no Python runtime.
 Contributions welcome! To get started:
 
 ```bash
-git clone https://github.com/pHequals7/muesli.git
-cd muesli
-swift build --package-path native/MuesliNative -c release
-swift test --package-path native/MuesliNative
+git clone https://github.com/gokulb20/useful-keyboard.git
+cd useful-keyboard
+swift build --package-path native/UsefulKeyboard -c release
+swift test --package-path native/UsefulKeyboard
 ./scripts/test_packaged_cli.sh
 ```
 
@@ -290,8 +290,8 @@ swift test --package-path native/MuesliNative
 Current test scope:
 
 - Covered by tests: CLI command contract generation, CLI path-resolution logic, SQLite read/write behavior, note-state classification, and meeting/dictation retrieval/update flows.
-- Not covered by Swift unit tests: app-bundle packaging and copying `muesli-cli` into `/Applications/Muesli.app/Contents/MacOS`.
-- Packaging is verified by `scripts/test_packaged_cli.sh`, which builds an isolated app bundle, checks that `Contents/MacOS/muesli-cli` exists and is executable, and runs `muesli-cli spec` from the packaged path.
+- Not covered by Swift unit tests: app-bundle packaging and copying `useful-keyboard-cli` into `/Applications/Useful Keyboard.app/Contents/MacOS`.
+- Packaging is verified by `scripts/test_packaged_cli.sh`, which builds an isolated app bundle, checks that `Contents/MacOS/useful-keyboard-cli` exists and is executable, and runs `useful-keyboard-cli spec` from the packaged path.
 
 Please open an issue before submitting large PRs.
 
@@ -299,7 +299,7 @@ Please open an issue before submitting large PRs.
 
 ## Support
 
-If Muesli saves you time, consider supporting development:
+If Useful Keyboard saves you time, consider supporting development:
 
 <a href="https://buymeacoffee.com/phequals7"><img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-yellow?style=for-the-badge&logo=buymeacoffee&logoColor=white" alt="Buy Me A Coffee" /></a>
 

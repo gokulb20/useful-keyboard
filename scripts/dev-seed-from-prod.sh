@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safely seed MuesliDev from production data without touching production files.
+# Safely seed UsefulKeyboardDev from production data without touching production files.
 #
 # Default behavior:
-# - Reads from ~/Library/Application Support/Muesli
-# - Writes to ~/Library/Application Support/MuesliDev
+# - Reads from ~/Library/Application Support/Useful Keyboard
+# - Writes to ~/Library/Application Support/UsefulKeyboardDev
 # - Stages the current dev support dir first so unrelated dev-only files are preserved
-# - Overlays production muesli.db / sidecars and config.json into the staged temp directory
+# - Overlays production useful-keyboard.db / sidecars and config.json into the staged temp directory
 # - Validates the staged files
 # - Backs up the current dev support dir
 # - Swaps the staged directory into place
@@ -15,11 +15,11 @@ set -euo pipefail
 # Usage:
 #   ./scripts/dev-seed-from-prod.sh
 #   ./scripts/dev-seed-from-prod.sh --db-only
-#   ./scripts/dev-seed-from-prod.sh --prod-dir "/path/to/Muesli" --dev-dir "/path/to/MuesliDev"
+#   ./scripts/dev-seed-from-prod.sh --prod-dir "/path/to/Useful Keyboard" --dev-dir "/path/to/UsefulKeyboardDev"
 #   ./scripts/dev-seed-from-prod.sh --dry-run
 
-PROD_SUPPORT_DIR="${MUESLI_PROD_SUPPORT_DIR:-$HOME/Library/Application Support/Muesli}"
-DEV_SUPPORT_DIR="${MUESLI_DEV_SUPPORT_DIR:-$HOME/Library/Application Support/MuesliDev}"
+PROD_SUPPORT_DIR="${UK_PROD_SUPPORT_DIR:-$HOME/Library/Application Support/Muesli}"
+DEV_SUPPORT_DIR="${UK_DEV_SUPPORT_DIR:-$HOME/Library/Application Support/UsefulKeyboardDev}"
 COPY_CONFIG=1
 DRY_RUN=0
 FORCE=0
@@ -28,14 +28,14 @@ SEEDED_DEV=0
 
 usage() {
   cat <<'EOF'
-Safely seed MuesliDev from production data.
+Safely seed UsefulKeyboardDev from production data.
 
 Options:
   --prod-dir PATH   Override the production support directory.
   --dev-dir PATH    Override the dev support directory.
-  --db-only         Copy only muesli.db, not config.json.
+  --db-only         Copy only useful-keyboard.db, not config.json.
   --dry-run         Print the planned actions without modifying files.
-  --force           Continue even if Muesli or MuesliDev appears to be running.
+  --force           Continue even if Useful Keyboard or UsefulKeyboardDev appears to be running.
   --help            Show this help text.
 EOF
 }
@@ -70,7 +70,7 @@ require_safe_support_dir() {
 }
 
 running_processes() {
-  ps ax -o pid=,comm= | awk '$2 == "Muesli" || $2 == "MuesliDev" { print }'
+  ps ax -o pid=,comm= | awk '$2 == "Useful Keyboard" || $2 == "UsefulKeyboardDev" { print }'
 }
 
 run_or_echo() {
@@ -153,19 +153,19 @@ require_safe_support_dir "Production support directory" "$PROD_SUPPORT_DIR"
 require_safe_support_dir "Dev support directory" "$DEV_SUPPORT_DIR"
 [[ "$PROD_SUPPORT_DIR" != "$DEV_SUPPORT_DIR" ]] || die "Production and dev support directories must differ."
 
-PROD_DB="$PROD_SUPPORT_DIR/muesli.db"
-PROD_DB_SHM="$PROD_SUPPORT_DIR/muesli.db-shm"
-PROD_DB_WAL="$PROD_SUPPORT_DIR/muesli.db-wal"
+PROD_DB="$PROD_SUPPORT_DIR/useful-keyboard.db"
+PROD_DB_SHM="$PROD_SUPPORT_DIR/useful-keyboard.db-shm"
+PROD_DB_WAL="$PROD_SUPPORT_DIR/useful-keyboard.db-wal"
 PROD_CONFIG="$PROD_SUPPORT_DIR/config.json"
 DEV_PARENT="$(dirname "$DEV_SUPPORT_DIR")"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="${DEV_SUPPORT_DIR}.backup.${TIMESTAMP}"
 ROLLOVER_DIR="${DEV_SUPPORT_DIR}.swap.${TIMESTAMP}"
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  STAGE_DIR="${DEV_PARENT}/muesli-dev-seed-stage.${TIMESTAMP}"
+  STAGE_DIR="${DEV_PARENT}/uk-dev-seed-stage.${TIMESTAMP}"
 else
   mkdir -p "$DEV_PARENT"
-  STAGE_DIR="$(mktemp -d "${DEV_PARENT}/muesli-dev-seed-stage.XXXXXX")"
+  STAGE_DIR="$(mktemp -d "${DEV_PARENT}/uk-dev-seed-stage.XXXXXX")"
 fi
 
 cleanup() {
@@ -181,7 +181,7 @@ trap cleanup EXIT
 
 if [[ "$FORCE" -ne 1 ]]; then
   if running="$(running_processes)" && [[ -n "$running" ]]; then
-    printf 'Refusing to seed while Muesli or MuesliDev is running:\n%s\n' "$running" >&2
+    printf 'Refusing to seed while Useful Keyboard or UsefulKeyboardDev is running:\n%s\n' "$running" >&2
     die "Quit both apps or rerun with --force."
   fi
 fi
@@ -202,19 +202,19 @@ run_or_echo mkdir -p "$STAGE_DIR"
 if [[ -d "$DEV_SUPPORT_DIR" ]]; then
   run_or_echo ditto "$DEV_SUPPORT_DIR" "$STAGE_DIR"
 fi
-run_or_echo ditto "$PROD_DB" "$STAGE_DIR/muesli.db"
+run_or_echo ditto "$PROD_DB" "$STAGE_DIR/useful-keyboard.db"
 if [[ -f "$PROD_DB_SHM" ]]; then
-  run_or_echo ditto "$PROD_DB_SHM" "$STAGE_DIR/muesli.db-shm"
+  run_or_echo ditto "$PROD_DB_SHM" "$STAGE_DIR/useful-keyboard.db-shm"
 fi
 if [[ -f "$PROD_DB_WAL" ]]; then
-  run_or_echo ditto "$PROD_DB_WAL" "$STAGE_DIR/muesli.db-wal"
+  run_or_echo ditto "$PROD_DB_WAL" "$STAGE_DIR/useful-keyboard.db-wal"
 fi
 if [[ "$COPY_CONFIG" -eq 1 ]]; then
   run_or_echo ditto "$PROD_CONFIG" "$STAGE_DIR/config.json"
 fi
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
-  validate_sqlite_db "$STAGE_DIR/muesli.db"
+  validate_sqlite_db "$STAGE_DIR/useful-keyboard.db"
   if [[ -f "$STAGE_DIR/config.json" ]]; then
     validate_json_file "$STAGE_DIR/config.json"
   fi

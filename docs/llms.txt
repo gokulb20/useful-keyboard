@@ -1,8 +1,8 @@
-# Muesli
+# Useful Keyboard
 
 > Local-first AI dictation and meeting transcriber for macOS.
 
-Muesli is a free, open-source macOS application that provides hold-to-talk dictation and meeting transcription powered by on-device AI inference. All speech-to-text runs locally on Apple Silicon — no cloud required for core functionality.
+Useful Keyboard is a free, open-source macOS application that provides hold-to-talk dictation and meeting transcription powered by on-device AI inference. All speech-to-text runs locally on Apple Silicon — no cloud required for core functionality.
 
 ## Features
 
@@ -17,21 +17,21 @@ Muesli is a free, open-source macOS application that provides hold-to-talk dicta
 
 - **Runtime**: Native Swift/AppKit application (not Electron)
 - **Speech Engine**: Fluid Audio SDK (CoreML, Apple Neural Engine)
-- **Storage**: Local SQLite database at ~/Library/Application Support/Muesli/
+- **Storage**: Local SQLite database at ~/Library/Application Support/Useful Keyboard/
 - **Audio Capture**: AVAudioRecorder (mic), AudioHardwareCreateProcessTap (system audio)
 - **Platform**: macOS 14.2+ on Apple Silicon (M1/M2/M3/M4)
 
 ## Links
 
-- Website: https://freedspeech.xyz
-- GitHub: https://github.com/pHequals7/muesli
-- Download: https://github.com/pHequals7/muesli/releases/download/v0.5.5/Muesli-0.5.5.dmg
-- Support: https://buymeacoffee.com/phequals7
+
+- GitHub: https://github.com/gokulb20/useful-keyboard
+- Download: https://github.com/gokulb20/useful-keyboard/releases/download/v0.5.5/Useful-Keyboard-0.5.5.dmg
+- Support:
 - License: MIT
 
 ## Architecture
 
-Muesli is a menu bar app with two modes:
+Useful Keyboard is a menu bar app with two modes:
 
 1. **Dictation Mode**: User holds Left Cmd key → mic records → on release, audio is transcribed locally → text is pasted at the active cursor position via accessibility APIs.
 
@@ -41,4 +41,4 @@ The app uses Fluid Audio's CoreML models running on the Apple Neural Engine for 
 
 ## Author
 
-Built by Pranav Hari (@pHequals7).
+Built by the Useful Keyboard team.

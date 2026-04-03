@@ -4,17 +4,17 @@ set -euo pipefail
 # Reset macOS TCC permissions for the dev app bundle without touching app data.
 #
 # Default behavior:
-# - Resets all permissions for com.muesli.dev using tccutil
-# - Refuses to run while MuesliDev appears to be running unless forced
+# - Resets all permissions for com.usefulkeyboard.dev using tccutil
+# - Refuses to run while UsefulKeyboardDev appears to be running unless forced
 # - Prints the manual next steps required to re-grant permissions
 #
 # Usage:
 #   ./scripts/dev-reset-permissions.sh
-#   ./scripts/dev-reset-permissions.sh --bundle-id com.muesli.dev
+#   ./scripts/dev-reset-permissions.sh --bundle-id com.usefulkeyboard.dev
 #   ./scripts/dev-reset-permissions.sh --dry-run
 
-BUNDLE_ID="${MUESLI_DEV_BUNDLE_ID:-com.muesli.dev}"
-APP_PROCESS_NAME="${MUESLI_DEV_PROCESS_NAME:-MuesliDev}"
+BUNDLE_ID="${UK_DEV_BUNDLE_ID:-com.usefulkeyboard.dev}"
+APP_PROCESS_NAME="${UK_DEV_PROCESS_NAME:-UsefulKeyboardDev}"
 DRY_RUN=0
 FORCE=0
 

@@ -4,7 +4,7 @@ Read AGENTS.md first for repo context.
 
 ## Goal
 
-Rebrand the app from "Muesli" to "Useful Keyboard" and apply a strict minimal design language: black background, white text, no emojis, simple or no icons, very minimal, natural navigation.
+Rebrand the app to "Useful Keyboard" and apply a strict minimal design language: black background, white text, no emojis, simple or no icons, very minimal, natural navigation.
 
 ## Design Language
 
@@ -14,24 +14,24 @@ Rebrand the app from "Muesli" to "Useful Keyboard" and apply a strict minimal de
 - **No emojis**: The codebase currently has no emoji in UI strings (good). Keep it that way. Remove any emoji-like SF Symbols if they feel decorative.
 - **Icons**: Use SF Symbols only where they serve a functional purpose (e.g., mic icon when recording). Remove decorative icons. The sidebar nav items can be text-only if it looks cleaner.
 - **Typography**: Keep the Inter font (AppFonts.swift). Clean, sans-serif, minimal.
-- **Spacing**: Keep the existing 4pt grid from MuesliTheme.
+- **Spacing**: Keep the existing 4pt grid from Theme.
 
 ## Specific Tasks
 
 ### 1. Rename User-Facing Strings
 
-These are the exact locations where "Muesli" appears in user-facing text:
+These are the exact locations where "Useful Keyboard" appears in user-facing text:
 
 | File | Line | Current String | Change To |
 |---|---|---|---|
-| `Sources/MuesliNativeApp/AppIdentity.swift` | 5 | `private static let defaultName = "Muesli"` | `"Useful Keyboard"` |
-| `Sources/MuesliNativeApp/OnboardingView.swift` | 164 | `"Welcome to Muesli"` | `"Welcome to Useful Keyboard"` |
-| `Sources/MuesliNativeApp/OnboardingView.swift` | 277 | `"Muesli needs a few macOS permissions to work properly..."` | `"Useful Keyboard needs a few macOS permissions to work properly..."` |
-| `Sources/MuesliNativeApp/OnboardingWindowController.swift` | 34 | `window.title = "Welcome to Muesli"` | `"Welcome to Useful Keyboard"` |
-| `Sources/MuesliNativeApp/SidebarView.swift` | 78 | `"muesli"` (sidebar logo text) | `"useful keyboard"` or just `"keyboard"` |
-| `Sources/MuesliNativeApp/StatusBarController.swift` | 51 | Uses `AppIdentity.displayName` | Already dynamic, will update via AppIdentity |
+| `Sources/UsefulKeyboardApp/AppIdentity.swift` | 5 | `private static let defaultName = "Useful Keyboard"` | `"Useful Keyboard"` |
+| `Sources/UsefulKeyboardApp/OnboardingView.swift` | 164 | `"Welcome to Useful Keyboard"` | `"Welcome to Useful Keyboard"` |
+| `Sources/UsefulKeyboardApp/OnboardingView.swift` | 277 | `"Useful Keyboard needs a few macOS permissions to work properly..."` | `"Useful Keyboard needs a few macOS permissions to work properly..."` |
+| `Sources/UsefulKeyboardApp/OnboardingWindowController.swift` | 34 | `window.title = "Welcome to Useful Keyboard"` | `"Welcome to Useful Keyboard"` |
+| `Sources/UsefulKeyboardApp/SidebarView.swift` | 78 | `"useful keyboard"` (sidebar logo text) | `"useful keyboard"` or just `"keyboard"` |
+| `Sources/UsefulKeyboardApp/StatusBarController.swift` | 51 | Uses `AppIdentity.displayName` | Already dynamic, will update via AppIdentity |
 
-Also grep for any other user-facing "Muesli" or "muesli" strings across all `.swift` files in `Sources/MuesliNativeApp/`. Only change user-facing strings (UI labels, window titles, alert text, onboarding copy). Do NOT rename Swift types, module names, variable names, or internal identifiers.
+Also grep for any other user-facing "Useful Keyboard" or "useful keyboard" strings across all `.swift` files in `Sources/UsefulKeyboardApp/`. Only change user-facing strings (UI labels, window titles, alert text, onboarding copy). Do NOT rename Swift types, module names, variable names, or internal identifiers.
 
 ### 2. Update Build Script Bundle ID
 
@@ -39,17 +39,17 @@ The build script `scripts/build_native_app.sh` generates Info.plist at build tim
 
 | Variable | Current Default | Change To |
 |---|---|---|
-| `APP_NAME` (line ~12) | `Muesli` | `Useful Keyboard` |
+| `APP_NAME` (line ~12) | `Useful Keyboard` | `Useful Keyboard` |
 | `APP_DISPLAY_NAME` (line ~13) | `$APP_NAME` | Keep as-is (inherits) |
 | `APP_BUNDLE_NAME` (line ~14) | `$APP_NAME.app` | Keep as-is (becomes `Useful Keyboard.app`) |
-| `APP_EXECUTABLE_NAME` (line ~15) | `Muesli` | `Useful Keyboard` |
-| `BUNDLE_ID` (line ~17) | `com.muesli.app` | `ai.useful.keyboard` |
+| `APP_EXECUTABLE_NAME` (line ~15) | `Useful Keyboard` | `Useful Keyboard` |
+| `BUNDLE_ID` (line ~17) | `com.usefulkeyboard.app` | `ai.useful.keyboard` |
 
-The script uses env var overrides (`MUESLI_APP_NAME`, `MUESLI_BUNDLE_ID`, etc.) — change the defaults in the script itself so it works without env vars.
+The script uses env var overrides (`UK_APP_NAME`, `UK_BUNDLE_ID`, etc.) — change the defaults in the script itself so it works without env vars.
 
-### 3. Update Theme Colors (MuesliTheme.swift)
+### 3. Update Theme Colors (Theme.swift)
 
-File: `Sources/MuesliNativeApp/MuesliTheme.swift`
+File: `Sources/UsefulKeyboardApp/Theme.swift`
 
 Make the dark mode deeper/blacker:
 
@@ -109,7 +109,7 @@ Update `scripts/build_native_app.sh` to copy the new icon file (currently copies
 
 ### 7. App Icon
 
-Current: `assets/muesli.icns` and `assets/muesli_app_icon.png`
+Current: `assets/app-icon.icns` and `assets/app-icon.png`
 
 Create a minimal placeholder:
 - Black rounded square with "UK" in white, centered
@@ -119,7 +119,7 @@ Create a minimal placeholder:
 
 ### 8. Remove MWaveformIcon Usage
 
-File: `Sources/MuesliNativeApp/MWaveformIcon.swift`
+File: `Sources/UsefulKeyboardApp/MWaveformIcon.swift`
 
 This is the custom "M" logo component. After replacing its usage in SidebarView and OnboardingView with text, you can either:
 - Delete the file entirely if nothing references it
@@ -138,8 +138,8 @@ Changes:
 
 ## Files NOT to Touch
 
-- Anything in `Sources/MuesliCore/` (storage layer)
-- `Sources/MuesliCLI/` (CLI stays as muesli-cli)
+- Anything in `Sources/UsefulKeyboardCore/` (storage layer)
+- `Sources/UsefulKeyboardCLI/` (CLI stays as useful-keyboard-cli)
 - Audio/transcription files: StreamingMicRecorder, MicrophoneRecorder, SystemAudioRecorder, FluidAudioBackend, WhisperCppBackend, NemotronStreamingBackend, TranscriptionRuntime, FillerWordFilter, CustomWordMatcher
 - Meeting logic: MeetingSession, MeetingDetector, MeetingSummaryClient, CalendarMonitor
 - PasteController.swift, HotkeyMonitor.swift, StreamingDictationController.swift
@@ -148,8 +148,8 @@ Changes:
 ## Verification
 
 ```bash
-swift build --package-path native/MuesliNative
-swift test --package-path native/MuesliNative
+swift build --package-path native/UsefulKeyboard
+swift test --package-path native/UsefulKeyboard
 ```
 
-Both must pass. Do not modify any test files unless a test explicitly asserts on the string "Muesli" in a user-facing context (update those to "Useful Keyboard").
+Both must pass. Do not modify any test files unless a test explicitly asserts on the string "Useful Keyboard" in a user-facing context (update those to "Useful Keyboard").
