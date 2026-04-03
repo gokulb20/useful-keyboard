@@ -25,14 +25,16 @@ public struct DictationRecord: Identifiable, Codable, Sendable {
     public let rawText: String
     public let appContext: String
     public let wordCount: Int
+    public let cloudRecordID: String?
 
-    public init(id: Int64, timestamp: String, durationSeconds: Double, rawText: String, appContext: String, wordCount: Int) {
+    public init(id: Int64, timestamp: String, durationSeconds: Double, rawText: String, appContext: String, wordCount: Int, cloudRecordID: String? = nil) {
         self.id = id
         self.timestamp = timestamp
         self.durationSeconds = durationSeconds
         self.rawText = rawText
         self.appContext = appContext
         self.wordCount = wordCount
+        self.cloudRecordID = cloudRecordID
     }
 }
 
@@ -53,6 +55,7 @@ public struct MeetingRecord: Identifiable, Codable, Sendable {
     public let selectedTemplateName: String?
     public let selectedTemplateKind: MeetingTemplateKind?
     public let selectedTemplatePrompt: String?
+    public let cloudRecordID: String?
 
     public init(
         id: Int64,
@@ -70,7 +73,8 @@ public struct MeetingRecord: Identifiable, Codable, Sendable {
         selectedTemplateID: String? = nil,
         selectedTemplateName: String? = nil,
         selectedTemplateKind: MeetingTemplateKind? = nil,
-        selectedTemplatePrompt: String? = nil
+        selectedTemplatePrompt: String? = nil,
+        cloudRecordID: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -88,6 +92,7 @@ public struct MeetingRecord: Identifiable, Codable, Sendable {
         self.selectedTemplateName = selectedTemplateName
         self.selectedTemplateKind = selectedTemplateKind
         self.selectedTemplatePrompt = selectedTemplatePrompt
+        self.cloudRecordID = cloudRecordID
     }
 
     public var notesState: MeetingNotesState {
@@ -119,11 +124,13 @@ public struct MeetingFolder: Identifiable, Codable, Sendable {
     public let id: Int64
     public var name: String
     public let createdAt: String
+    public let cloudRecordID: String?
 
-    public init(id: Int64, name: String, createdAt: String) {
+    public init(id: Int64, name: String, createdAt: String, cloudRecordID: String? = nil) {
         self.id = id
         self.name = name
         self.createdAt = createdAt
+        self.cloudRecordID = cloudRecordID
     }
 }
 

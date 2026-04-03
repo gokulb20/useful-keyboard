@@ -130,6 +130,19 @@ final class MuesliController: NSObject {
             fputs("[muesli-native] startup error: \(error)\n", stderr)
         }
 
+        // Wire iCloud sync
+        CloudKitSyncManager.shared.configure(store: dictationStore)
+        CloudKitSyncManager.shared.onCustomWordsReceived = { [weak self] words in
+            guard let self else { return }
+            self.updateConfig { config in
+                for word in words {
+                    if !config.customWords.contains(where: { $0.id == word.id }) {
+                        config.customWords.append(word)
+                    }
+                }
+            }
+        }
+
         // Clean up leftover audio temp files from previous sessions.
         cleanupTemporaryDirectory(
             named: "muesli-system-audio",
@@ -469,10 +482,12 @@ final class MuesliController: NSObject {
 
     func addCustomWord(_ word: CustomWord) {
         updateConfig { $0.customWords.append(word) }
+        CloudKitSyncManager.shared.pushCustomWords(config.customWords)
     }
 
     func removeCustomWord(id: UUID) {
         updateConfig { $0.customWords.removeAll { $0.id == id } }
+        CloudKitSyncManager.shared.pushCustomWords(config.customWords)
     }
 
     func updateDictationHotkey(_ hotkey: HotkeyConfig) {

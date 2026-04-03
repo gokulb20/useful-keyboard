@@ -1,4 +1,5 @@
 import AppKit
+import CloudKit
 import Foundation
 import Sparkle
 import TelemetryDeck
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.updaterController = updaterController
             self.controller = controller
             controller.start()
+            NSApplication.shared.registerForRemoteNotifications()
         } catch {
             let alert = NSAlert()
             alert.messageText = "\(AppIdentity.displayName) failed to start"
@@ -37,6 +39,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.runModal()
             NSApplication.shared.terminate(nil)
         }
+    }
+
+    func application(_ application: NSApplication, didReceiveRemoteNotification userInfo: [String: Any]) {
+        CloudKitSyncManager.shared.handleRemoteNotification(userInfo: userInfo)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
