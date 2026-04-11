@@ -138,6 +138,31 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
         .expect("failed to create quit item");
     let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
 
+    // Build mode submenu — shows active mode with checkmark
+    let active_mode_id = &settings.active_mode_id;
+    let active_mode_name = settings
+        .processing_modes
+        .iter()
+        .find(|m| m.id == *active_mode_id)
+        .map(|m| m.name.clone())
+        .unwrap_or_else(|| strings.mode.clone());
+
+    let mode_submenu = {
+        let submenu = Submenu::with_id(app, "mode_submenu", &active_mode_name, true)
+            .expect("failed to create mode submenu");
+
+        for mode in &settings.processing_modes {
+            let is_active = mode.id == *active_mode_id;
+            let item_id = format!("mode_select:{}", mode.id);
+            let item =
+                CheckMenuItem::with_id(app, &item_id, &mode.name, true, is_active, None::<&str>)
+                    .expect("failed to create mode item");
+            let _ = submenu.append(&item);
+        }
+
+        submenu
+    };
+
     // Build model submenu — label is the active model name
     let model_manager = app.state::<Arc<ModelManager>>();
     let models = model_manager.get_available_models();
@@ -202,6 +227,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             app,
             &[
                 &version_i,
+                &separator(),
+                &mode_submenu,
                 &separator(),
                 &copy_last_transcript_i,
                 &separator(),

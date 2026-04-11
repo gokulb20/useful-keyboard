@@ -238,6 +238,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "quit" => {
                 app.exit(0);
             }
+            id if id.starts_with("mode_select:") => {
+                let mode_id = id.strip_prefix("mode_select:").unwrap().to_string();
+                let current_mode = settings::get_settings(app).active_mode_id;
+                if mode_id == current_mode {
+                    return;
+                }
+                let mut s = settings::get_settings(app);
+                if s.processing_modes.iter().any(|m| m.id == mode_id) {
+                    s.active_mode_id = mode_id.clone();
+                    settings::write_settings(app, s);
+                    log::info!("Mode switched to {} via tray.", mode_id);
+                    tray::update_tray_menu(app, &tray::TrayIconState::Idle, None);
+                }
+            }
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
@@ -425,6 +439,12 @@ pub fn run(cli_args: CliArgs) {
             commands::history::retry_history_entry_transcription,
             commands::history::update_history_limit,
             commands::history::update_recording_retention_period,
+            commands::modes::get_processing_modes,
+            commands::modes::get_active_mode_id,
+            commands::modes::set_active_mode,
+            commands::modes::create_processing_mode,
+            commands::modes::update_processing_mode,
+            commands::modes::delete_processing_mode,
             helpers::clamshell::is_laptop,
         ])
         .events(collect_events![managers::history::HistoryUpdatePayload,]);

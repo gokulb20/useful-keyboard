@@ -5,7 +5,7 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{get_settings, AppSettings, ProcessingMode, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
@@ -296,6 +296,219 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
     }
 }
 
+/// Append custom vocabulary glossary to the mode's system prompt.
+fn build_mode_prompt(mode: &ProcessingMode, custom_words: &[String]) -> String {
+    let mut prompt = mode.prompt.clone();
+    if !custom_words.is_empty() {
+        prompt.push_str(&format!(
+            "\n\nCustom vocabulary (use these exact spellings when they appear): {}",
+            custom_words.join(", ")
+        ));
+    }
+    prompt
+}
+
+/// Post-process transcription using a specific processing mode.
+/// Reuses the existing provider/model/API key infrastructure but uses the mode's prompt.
+async fn post_process_with_mode(
+    settings: &AppSettings,
+    transcription: &str,
+    mode: &ProcessingMode,
+) -> Option<String> {
+    let provider = match settings.active_post_process_provider().cloned() {
+        Some(p) => p,
+        None => {
+            debug!(
+                "Post-processing mode '{}' skipped: no provider selected",
+                mode.id
+            );
+            return None;
+        }
+    };
+
+    let model = settings
+        .post_process_models
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    if model.trim().is_empty() {
+        debug!(
+            "Post-processing mode '{}' skipped: no model configured for provider '{}'",
+            mode.id, provider.id
+        );
+        return None;
+    }
+
+    let api_key = settings
+        .post_process_api_keys
+        .get(&provider.id)
+        .cloned()
+        .unwrap_or_default();
+
+    let system_prompt = build_mode_prompt(mode, &settings.custom_words);
+
+    debug!(
+        "Starting mode '{}' post-processing with provider '{}' (model: {})",
+        mode.id, provider.id, model
+    );
+
+    // Disable reasoning for providers where post-processing rarely benefits from it
+    let (reasoning_effort, reasoning) = match provider.id.as_str() {
+        "custom" => (Some("none".to_string()), None),
+        "openrouter" => (
+            None,
+            Some(crate::llm_client::ReasoningConfig {
+                effort: Some("none".to_string()),
+                exclude: Some(true),
+            }),
+        ),
+        _ => (None, None),
+    };
+
+    // Handle Apple Intelligence separately
+    if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        {
+            if !apple_intelligence::check_apple_intelligence_availability() {
+                debug!("Apple Intelligence not available for mode '{}'", mode.id);
+                return None;
+            }
+
+            let token_limit = model.trim().parse::<i32>().unwrap_or(0);
+            return match apple_intelligence::process_text_with_system_prompt(
+                &system_prompt,
+                transcription,
+                token_limit,
+            ) {
+                Ok(result) => {
+                    let result = strip_invisible_chars(&result);
+                    if result.trim() == "EMPTY" {
+                        debug!("Mode '{}': LLM returned EMPTY sentinel", mode.id);
+                        return Some(String::new());
+                    }
+                    if result.trim().is_empty() {
+                        debug!("Mode '{}': Apple Intelligence returned empty", mode.id);
+                        None
+                    } else {
+                        Some(result)
+                    }
+                }
+                Err(err) => {
+                    error!("Mode '{}': Apple Intelligence failed: {}", mode.id, err);
+                    None
+                }
+            };
+        }
+
+        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+        {
+            debug!("Apple Intelligence not supported on this platform");
+            return None;
+        }
+    }
+
+    // Try structured output first if supported
+    if provider.supports_structured_output {
+        let json_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                (TRANSCRIPTION_FIELD): {
+                    "type": "string",
+                    "description": "The cleaned and processed transcription text"
+                }
+            },
+            "required": [TRANSCRIPTION_FIELD],
+            "additionalProperties": false
+        });
+
+        match crate::llm_client::send_chat_completion_with_schema(
+            &provider,
+            api_key.clone(),
+            &model,
+            transcription.to_string(),
+            Some(system_prompt.clone()),
+            Some(json_schema),
+            reasoning_effort.clone(),
+            reasoning.clone(),
+        )
+        .await
+        {
+            Ok(Some(content)) => match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(json) => {
+                    if let Some(text) = json.get(TRANSCRIPTION_FIELD).and_then(|t| t.as_str()) {
+                        let result = strip_invisible_chars(text);
+                        if result.trim() == "EMPTY" {
+                            debug!("Mode '{}': LLM returned EMPTY sentinel", mode.id);
+                            return Some(String::new());
+                        }
+                        return Some(result);
+                    } else {
+                        let result = strip_invisible_chars(&content);
+                        if result.trim() == "EMPTY" {
+                            return Some(String::new());
+                        }
+                        return Some(result);
+                    }
+                }
+                Err(e) => {
+                    error!("Mode '{}': structured output parse error: {}", mode.id, e);
+                    let result = strip_invisible_chars(&content);
+                    if result.trim() == "EMPTY" {
+                        return Some(String::new());
+                    }
+                    return Some(result);
+                }
+            },
+            Ok(None) => {
+                error!("Mode '{}': LLM returned no content", mode.id);
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    "Mode '{}': structured output failed: {}. Falling back to legacy.",
+                    mode.id, e
+                );
+                // Fall through to legacy mode
+            }
+        }
+    }
+
+    // Legacy mode: system prompt + user content
+    match crate::llm_client::send_chat_completion_with_schema(
+        &provider,
+        api_key,
+        &model,
+        transcription.to_string(),
+        Some(system_prompt),
+        None,
+        reasoning_effort,
+        reasoning,
+    )
+    .await
+    {
+        Ok(Some(content)) => {
+            let content = strip_invisible_chars(&content);
+            if content.trim() == "EMPTY" {
+                debug!("Mode '{}': LLM returned EMPTY sentinel", mode.id);
+                return Some(String::new());
+            }
+            Some(content)
+        }
+        Ok(None) => {
+            error!("Mode '{}': LLM returned no content", mode.id);
+            None
+        }
+        Err(e) => {
+            error!(
+                "Mode '{}': LLM post-processing failed: {}. Falling back to raw.",
+                mode.id, e
+            );
+            None // Fallback: pass through raw transcription
+        }
+    }
+}
+
 async fn maybe_convert_chinese_variant(
     settings: &AppSettings,
     transcription: &str,
@@ -360,7 +573,31 @@ pub(crate) async fn process_transcription_output(
         final_text = converted_text;
     }
 
-    if post_process {
+    // Get the active mode when post-processing is requested
+    let mode = if post_process {
+        settings
+            .processing_modes
+            .iter()
+            .find(|m| m.id == settings.active_mode_id)
+            .cloned()
+    } else {
+        None // Raw passthrough when using the plain transcribe hotkey
+    };
+
+    if let Some(mode) = mode {
+        if !mode.prompt.is_empty() {
+            // Use mode's prompt for LLM post-processing
+            if let Some(processed_text) =
+                post_process_with_mode(&settings, &final_text, &mode).await
+            {
+                post_processed_text = Some(processed_text.clone());
+                final_text = processed_text;
+                post_process_prompt = Some(mode.prompt.clone());
+            }
+        }
+        // else: mode has empty prompt (Raw mode) — skip LLM
+    } else if post_process {
+        // Fallback: no matching mode found, use legacy prompt-based post-processing
         if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
@@ -375,7 +612,9 @@ pub(crate) async fn process_transcription_output(
                 }
             }
         }
-    } else if final_text != transcription {
+    }
+
+    if final_text != transcription && post_processed_text.is_none() {
         post_processed_text = Some(final_text.clone());
     }
 

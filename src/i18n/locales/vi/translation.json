@@ -6,7 +6,8 @@
     "unloadModel": "Dỡ mô hình",
     "model": "Mô hình",
     "quit": "Thoát",
-    "cancel": "Hủy"
+    "cancel": "Hủy",
+    "mode": "Mode"
   },
   "sidebar": {
     "general": "Chung",

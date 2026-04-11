@@ -1,6 +1,14 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
+import {
+  Cog,
+  FlaskConical,
+  History,
+  Info,
+  Sparkles,
+  Cpu,
+  Layers,
+} from "lucide-react";
 import AppLogo from "./icons/AppLogo";
 import AppIcon from "./icons/AppIcon";
 import { useSettings } from "../hooks/useSettings";
@@ -11,6 +19,7 @@ import {
   DebugSettings,
   AboutSettings,
   PostProcessingSettings,
+  ModeSettings,
   ModelsSettings,
 } from "./settings";
 
@@ -42,6 +51,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.models",
     icon: Cpu,
     component: ModelsSettings,
+    enabled: () => true,
+  },
+  modes: {
+    labelKey: "sidebar.modes",
+    icon: Layers,
+    component: ModeSettings,
     enabled: () => true,
   },
   advanced: {

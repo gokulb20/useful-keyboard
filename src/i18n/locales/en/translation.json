@@ -5,6 +5,7 @@
     "copyLastTranscript": "Copy Last Transcript",
     "unloadModel": "Unload Model",
     "model": "Model",
+    "mode": "Mode",
     "quit": "Quit",
     "cancel": "Cancel"
   },
@@ -14,6 +15,7 @@
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
+    "modes": "Modes",
     "debug": "Debug",
     "about": "About"
   },
@@ -417,6 +419,28 @@
         "selectToEdit": "Select a prompt above to view and edit its details.",
         "createFirst": "Click 'Create New Prompt' above to create your first post-processing prompt."
       }
+    },
+    "modes": {
+      "title": "Modes",
+      "description": "Processing modes determine how your transcription is cleaned up by AI before pasting.",
+      "activeMode": "Active Mode",
+      "builtIn": "Built-in",
+      "custom": "Custom",
+      "addMode": "Add Mode",
+      "editMode": "Edit Mode",
+      "deleteMode": "Delete Mode",
+      "deleteConfirm": "Are you sure you want to delete this mode?",
+      "cannotDeleteBuiltin": "Built-in modes cannot be deleted.",
+      "cannotEditBuiltin": "Built-in modes cannot be edited.",
+      "modeName": "Mode Name",
+      "modeNamePlaceholder": "Enter mode name",
+      "modeDescription": "Description",
+      "modeDescriptionPlaceholder": "Short description of what this mode does",
+      "modePrompt": "System Prompt",
+      "modePromptPlaceholder": "Enter the system prompt for AI post-processing",
+      "save": "Save",
+      "cancel": "Cancel",
+      "createMode": "Create Mode"
     },
     "history": {
       "title": "History",

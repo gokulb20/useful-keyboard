@@ -8,5 +8,36 @@
     }
   },
   "push_to_talk": true,
-  "selected_language": "auto"
+  "selected_language": "auto",
+  "processing_modes": [
+    {
+      "id": "raw",
+      "name": "Raw",
+      "description": "No AI processing — paste transcription as-is",
+      "prompt": "",
+      "is_builtin": true
+    },
+    {
+      "id": "clean",
+      "name": "Clean",
+      "description": "Remove filler words, fix punctuation and grammar",
+      "prompt": "You are a transcription cleanup assistant...",
+      "is_builtin": true
+    },
+    {
+      "id": "email",
+      "name": "Email",
+      "description": "Format as a professional email",
+      "prompt": "You are an email formatting assistant...",
+      "is_builtin": true
+    },
+    {
+      "id": "message",
+      "name": "Message",
+      "description": "Format as a casual message",
+      "prompt": "You are a message formatting assistant...",
+      "is_builtin": true
+    }
+  ],
+  "active_mode_id": "clean"
 }

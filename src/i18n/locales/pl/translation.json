@@ -6,7 +6,8 @@
     "unloadModel": "Zwolnij model",
     "model": "Model",
     "quit": "Zamknij",
-    "cancel": "Anuluj"
+    "cancel": "Anuluj",
+    "mode": "Mode"
   },
   "sidebar": {
     "general": "Ogólne",
