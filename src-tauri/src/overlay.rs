@@ -71,8 +71,8 @@ fn update_gtk_layer_shell_anchors(overlay_window: &tauri::webview::WebviewWindow
 #[cfg(target_os = "linux")]
 fn init_gtk_layer_shell(overlay_window: &tauri::webview::WebviewWindow) -> bool {
 
-    if env::var("HANDY_NO_GTK_LAYER_SHELL").is_ok() {
-        debug!("Skipping GTK layer shell init (HANDY_NO_GTK_LAYER_SHELL is set)");
+    if env::var("UK_NO_GTK_LAYER_SHELL").is_ok() {
+        debug!("Skipping GTK layer shell init (UK_NO_GTK_LAYER_SHELL is set)");
         return false;
     }
 

@@ -2,13 +2,20 @@
 
 @theme {
   /* Design tokens */
-  --color-text: #0f0f0f;
-  --color-background: #fbfbfb;
-  --color-background-ui: #da5893;
-  --color-logo-primary: #faa2ca;
-  --color-logo-stroke: #382731;
-  --color-text-stroke: #f6f6f6;
-  --color-mid-gray: #808080;
+  --color-text: #F5F5F7;
+  --color-background: #000000;
+  --color-background-ui: #5E5CE6;
+  --color-logo-primary: #FFFFFF;
+  --color-logo-stroke: #F5F5F7;
+  --color-text-stroke: #48484A;
+  --color-mid-gray: #8E8E93;
+  --color-accent: #5E5CE6;
+  --color-accent-hover: #7A78F0;
+  --color-surface: #1C1C1E;
+  --color-surface-secondary: #2C2C2E;
+  --color-border: #38383A;
+  --color-success: #30D158;
+  --color-error: #FF453A;
 }
 
 :root {
@@ -17,12 +24,7 @@
   line-height: 24px;
   font-weight: 400;
 
-  /* Colors - Light Theme */
-  /* --color-text: #0f0f0f;
-  --color-background: #fbfbfb;
-  --color-logo-primary: #FAA2CA;
-  --color-logo-stroke: #382731;
-  --color-text-stroke: #f6f6f6; */
+  /* Useful Keyboard — always dark theme */
 
   /* Typography settings */
   font-synthesis: none;
@@ -54,11 +56,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* Colors - Dark Theme */
-    --color-text: #fbfbfb;
-    --color-background: #2c2b29;
-    --color-logo-primary: #f28cbb;
-    --color-logo-stroke: #fad1ed;
+    /* Always dark — tokens already set in @theme */
+    --color-text: #F5F5F7;
+    --color-background: #000000;
+    --color-logo-primary: #FFFFFF;
+    --color-logo-stroke: #F5F5F7;
   }
 }
 
