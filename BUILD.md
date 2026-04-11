@@ -1,130 +1,55 @@
-# Build Instructions
-
-This guide covers how to set up the development environment and build Useful Keyboard from source across different platforms.
+# Building Useful Keyboard
 
 ## Prerequisites
 
-### All Platforms
-
 - [Rust](https://rustup.rs/) (latest stable)
-- [Bun](https://bun.sh/) package manager
-- [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
+- [Bun](https://bun.sh/)
+- Xcode Command Line Tools (macOS) / Visual Studio Build Tools (Windows)
 
-### Platform-Specific Requirements
-
-#### macOS
-
-- Xcode Command Line Tools
-- Install with: `xcode-select --install`
-
-#### Windows
-
-- Microsoft C++ Build Tools
-- Visual Studio 2019/2022 with C++ development tools
-- Or Visual Studio Build Tools 2019/2022
-
-#### Linux
-
-- Build essentials
-- ALSA development libraries
-- Install with:
-
-  ```bash
-  # Ubuntu/Debian
-  sudo apt update
-  sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
-
-  # Fedora/RHEL
-  sudo dnf groupinstall "Development Tools"
-  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
-    gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
-    gtk-layer-shell gtk-layer-shell-devel \
-    cmake
-
-  # Arch Linux
-  sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
-    gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
-    cmake
-  ```
-
-## Setup Instructions
-
-### 1. Clone the Repository
-
-```bash
-git clone git@github.com:AskUseful/useful-keyboard.git
-cd useful-keyboard
-```
-
-### 2. Install Dependencies
+## Run Locally
 
 ```bash
 bun install
+CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 ```
 
-### 3. Start Dev Server
+## Build Locally
 
 ```bash
-bun tauri dev
-```
-
-### 4. Build for Production
-
-```bash
+bun install
 bun run tauri build
 ```
 
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
+Artifacts land in `src-tauri/target/release/bundle/`:
 
-## Linux Install (from source)
+| Platform | Path |
+|----------|------|
+| macOS DMG | `bundle/dmg/*.dmg` |
+| macOS App | `bundle/macos/*.app` |
+| Windows MSI | `bundle/msi/*.msi` |
+| Windows NSIS | `bundle/nsis/*.exe` |
 
-The raw binary (`src-tauri/target/release/useful-keyboard`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
-
-**Install from the deb bundle** (works on any Linux distro):
-
-```bash
-cd /tmp
-ar x /path/to/useful-keyboard/src-tauri/target/release/bundle/deb/Useful Keyboard_*_amd64.deb data.tar.gz
-tar xzf data.tar.gz
-sudo cp usr/bin/useful-keyboard /usr/bin/
-sudo cp -r usr/lib/useful-keyboard /usr/lib/
-sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
-sudo cp usr/share/applications/useful-keyboard.desktop /usr/share/applications/
-```
-
-After subsequent rebuilds, only the binary needs re-copying:
+For a cross-compile on macOS ARM64:
 
 ```bash
-sudo cp src-tauri/target/release/useful-keyboard /usr/bin/
+bun run tauri build --target aarch64-apple-darwin
+# Artifacts in src-tauri/target/aarch64-apple-darwin/release/bundle/
 ```
 
-Resources only need re-copying if they change upstream (new icons, sounds, etc.).
+## Release
 
-## Troubleshooting
-
-### AppImage build fails on Arch / rolling-release distros
-
-`linuxdeploy` bundles its own `strip` binary which is too old to process system libraries built with newer toolchains on rolling-release distros (Arch, CachyOS, Manjaro, EndeavourOS).
-
-The error from Tauri:
-
-```
-Bundling Useful Keyboard_*_amd64.AppImage
-failed to bundle project `failed to run linuxdeploy`
-```
-
-Tauri swallows the real linuxdeploy error. To see it, run linuxdeploy manually:
+Tag and push to trigger the unsigned release workflow:
 
 ```bash
-cd src-tauri/target/release/bundle/appimage
-~/.cache/tauri/linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-  --appdir useful-keyboard.AppDir --plugin gtk --output appimage
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-**Workaround:** The binary, deb, and rpm bundles all build fine — only the AppImage step fails. To skip it:
+This runs `.github/workflows/release-unsigned.yml`, which builds for
+macOS (ARM64) and Windows (x64), then creates a GitHub Release with
+the artifacts attached.
 
-```bash
-bun run tauri build -- --bundles deb
-```
+v0.1 ships unsigned. On macOS: right-click > Open on first launch.
+On Windows: dismiss the SmartScreen warning.
 
-Then install using the deb extraction method above.
+See `BUILD_NOTES.md` for code signing and model CDN migration TODOs.
